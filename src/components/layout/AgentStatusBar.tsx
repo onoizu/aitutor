@@ -4,10 +4,10 @@ import type { TutorMode } from "@/types/tutor";
 import { cn } from "@/lib/cn";
 
 const MODES: { id: TutorMode; label: string; icon: string; iconColor: string }[] = [
-  { id: "teach", label: "Teach", iconColor: "text-blue-400" },
-  { id: "quiz", label: "Quiz",  iconColor: "text-amber-400" },
-  { id: "repair", label: "Repair", iconColor: "text-orange-400" },
-  { id: "review", label: "Review", iconColor: "text-emerald-400" },
+  { id: "teach", label: "Teach", icon: "", iconColor: "text-blue-400" },
+  { id: "quiz", label: "Quiz", icon: "", iconColor: "text-amber-400" },
+  { id: "repair", label: "Repair", icon: "", iconColor: "text-orange-400" },
+  { id: "review", label: "Review", icon: "", iconColor: "text-emerald-400" },
 ];
 
 interface AgentStatusBarProps {
