@@ -8,8 +8,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: Arial, Helvetica, sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -23,4 +23,32 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Teach → Quiz → Repair → Review flow bar: scrollbar track + thumb */
+.agent-flow-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(165, 180, 252, 0.45) rgba(30, 27, 75, 0.55);
+}
+
+.agent-flow-scrollbar::-webkit-scrollbar {
+  height: 8px;
+}
+
+.agent-flow-scrollbar::-webkit-scrollbar-track {
+  margin: 2px;
+  border-radius: 9999px;
+  background: rgba(30, 27, 75, 0.55);
+}
+
+.agent-flow-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background: rgba(165, 180, 252, 0.45);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.agent-flow-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(199, 210, 254, 0.55);
+  background-clip: padding-box;
 }

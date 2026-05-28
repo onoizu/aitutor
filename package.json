@@ -2,22 +2,35 @@
   "name": "adaptive-ai-tutor-agent",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "clean": "rm -rf .next out build .turbo coverage .vercel .netlify .wrangler && find . -name '.DS_Store' -type f -delete 2>/dev/null; find . -name '*.tsbuildinfo' -type f -delete 2>/dev/null; exit 0",
+    "clean:all": "npm run clean && rm -rf node_modules"
   },
   "dependencies": {
+    "mammoth": "^1.12.0",
+    "mermaid": "^11.13.0",
     "next": "16.1.6",
+    "pdf-parse": "^2.4.5",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "react-markdown": "^10.1.0",
+    "react-syntax-highlighter": "^16.1.1",
+    "remark-gfm": "^4.0.1",
+    "word-extractor": "^1.0.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/react-syntax-highlighter": "^15.5.13",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",
