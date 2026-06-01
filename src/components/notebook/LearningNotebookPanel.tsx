@@ -25,7 +25,7 @@ export default function LearningNotebookPanel({
   const [isOpen, setIsOpen] = useState(true);
 
   return (
-    <section className="rounded-xl bg-neutral-900/80 ring-1 ring-white/10 overflow-hidden">
+    <section className="rounded-xl bg-neutral-900/80 ring-1 ring-white/10">
       <button
         type="button"
         onClick={() => setIsOpen((o) => !o)}
@@ -70,7 +70,7 @@ export default function LearningNotebookPanel({
               <GenerateSummaryNoteButton onClick={onGenerateSummary} label="Summarize Session" />
             </div>
           </div>
-          <div className="space-y-2 max-h-[400px] overflow-y-auto">
+          <div className="space-y-2">
             {entries.length === 0 ? (
               <p className="py-4 text-center text-xs text-white/60">
                 No notes yet. Use &quot;Add to Notes&quot; on tutor cards to save content.

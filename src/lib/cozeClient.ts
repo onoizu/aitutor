@@ -334,7 +334,7 @@ async function cozeChatCompletionOnce(
     additional_messages,
   });
 
-  let { chatId, conversationId: cozeConversationId } = extractChatMeta(chatRes);
+  const { chatId, conversationId: cozeConversationId } = extractChatMeta(chatRes);
   console.log(
     "[coze] chat created  chatId=%s  convId=%s  status=%s",
     chatId.slice(0, 16),

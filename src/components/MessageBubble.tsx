@@ -3,7 +3,6 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
 import MarkdownContent from "@/components/MarkdownContent";
-import TutorAvatar from "@/components/TutorAvatar";
 
 type MessageRole = "user" | "tutor";
 
@@ -19,12 +18,10 @@ export default function MessageBubble({ role, text, children }: MessageBubblePro
   return (
     <div
       className={cn(
-        "flex gap-2",
+        "flex",
         isUser ? "justify-end" : "justify-start",
       )}
     >
-      {!isUser && <TutorAvatar variant="tutor" />}
-
       <div
         className={cn(
           "max-w-[78%] rounded-2xl px-4 py-2.5 text-[15px] ring-1 ring-inset backdrop-blur-sm md:text-base",
@@ -42,9 +39,6 @@ export default function MessageBubble({ role, text, children }: MessageBubblePro
         ) : null}
         {children ? <div className={text ? "mt-2" : ""}>{children}</div> : null}
       </div>
-
-      {isUser && <TutorAvatar variant="user" />}
     </div>
   );
 }
-

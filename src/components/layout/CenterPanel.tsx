@@ -9,8 +9,6 @@ import type { LiveTurn } from "@/components/layout/MainLayout";
 import ChatWindow from "@/components/ChatWindow";
 import LiveChat from "@/components/LiveChat";
 import AgentStatusBar from "@/components/layout/AgentStatusBar";
-import ModeBadge from "@/components/panels/ModeBadge";
-import LearningStateBadge from "@/components/panels/LearningStateBadge";
 import QuizPaginationView from "@/components/quiz/QuizPaginationView";
 import CozeQuizView from "@/components/quiz/CozeQuizView";
 
@@ -46,6 +44,25 @@ interface CenterPanelProps {
     explanation: string;
   }) => Promise<void>;
 }
+
+const QUICK_CARDS = [
+  {
+    label: "Examples",
+    prompt: "Give me step-by-step examples for the current topic.",
+  },
+  {
+    label: "Quiz",
+    prompt: "Generate one multiple-choice quiz question for the current topic.",
+  },
+  {
+    label: "Mindmap",
+    prompt: "Create a mind map for the current topic.",
+  },
+  {
+    label: "Review",
+    prompt: "Summarize this session and suggest the next study step.",
+  },
+] as const;
 
 export default function CenterPanel({
   response,
@@ -111,6 +128,11 @@ export default function CenterPanel({
     }
   };
 
+  const applyQuickCard = (prompt: string) => {
+    setInputValue(prompt);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  };
+
   return (
     <main className="order-1 flex flex-col overflow-hidden rounded-2xl border border-white/15 bg-neutral-800/80 text-[15px] leading-relaxed shadow-[0_14px_48px_rgba(0,0,0,0.45)] md:text-base lg:order-2">
       <header className="shrink-0 border-b border-white/10 px-4 py-4 md:px-6">
@@ -159,24 +181,6 @@ export default function CenterPanel({
           {quizSession && quizSession.questions.length > 0 && repairModeInQuiz && (
             <p className="text-base text-amber-200">Detailed hint provided — please select your answer again</p>
           )}
-          <div className="flex flex-wrap items-center gap-2">
-            <ModeBadge
-              mode={
-                inCozeQuiz
-                  ? cozeRepairMode
-                    ? "repair"
-                    : "quiz"
-                  : quizSession && quizSession.questions.length > 0
-                    ? repairModeInQuiz
-                      ? "repair"
-                      : "quiz"
-                    : displayMode === "teach" && response.mode === "quiz"
-                      ? "teach"
-                      : response.mode
-              }
-            />
-            <LearningStateBadge state={response.learningState} />
-          </div>
         </div>
       </header>
 
@@ -259,6 +263,21 @@ export default function CenterPanel({
         {/* Hide input footer during quiz mode */}
         {!inCozeQuiz && !(quizSession && quizSession.questions.length > 0) && (
         <footer className="shrink-0 border-t border-white/10 bg-neutral-900/35 px-4 py-3 md:px-6">
+          <div className="mb-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+            <div className="flex gap-2 overflow-x-auto pb-0.5">
+              {QUICK_CARDS.map((card) => (
+                <button
+                  key={card.label}
+                  type="button"
+                  onClick={() => applyQuickCard(card.prompt)}
+                  disabled={isDemoMode || sending}
+                  className="shrink-0 rounded-lg border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs font-medium text-white/85 transition-colors hover:border-cyan-200/35 hover:bg-cyan-300/10 hover:text-white disabled:opacity-45"
+                >
+                  {card.label}
+                </button>
+              ))}
+            </div>
+          </div>
           {(imageFile || documentFile) && (
             <div className="mb-2 flex flex-wrap items-center gap-2">
               {imageFile && (
@@ -319,14 +338,14 @@ export default function CenterPanel({
               }}
             />
             <div className="group relative">
-              <div className="pointer-events-none absolute left-1/2 top-0 z-20 hidden w-max max-w-[220px] -translate-x-1/2 -translate-y-[120%] rounded-lg border border-white/20 bg-white px-3 py-1.5 text-[13px] text-neutral-900 shadow-lg group-hover:block">
+              <div className="pointer-events-none absolute left-0 top-0 z-20 hidden w-max max-w-[220px] -translate-y-[120%] rounded-lg border border-white/20 bg-white px-3 py-1.5 text-[13px] text-neutral-900 shadow-lg group-hover:block">
                 Upload an image for visual tutoring.
               </div>
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isDemoMode}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-neutral-800/80 text-blue-400 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-50"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/15 bg-white/15 text-white/85 transition-colors hover:bg-white/20 hover:text-white disabled:opacity-50"
                 title="Upload image"
               >
                 <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -335,14 +354,14 @@ export default function CenterPanel({
               </button>
             </div>
             <div className="group relative">
-              <div className="pointer-events-none absolute left-1/2 top-0 z-20 hidden w-max max-w-[220px] -translate-x-1/2 -translate-y-[120%] rounded-lg border border-white/20 bg-white px-3 py-1.5 text-[13px] text-neutral-900 shadow-lg group-hover:block">
+              <div className="pointer-events-none absolute left-0 top-0 z-20 hidden w-max max-w-[220px] -translate-y-[120%] rounded-lg border border-white/20 bg-white px-3 py-1.5 text-[13px] text-neutral-900 shadow-lg group-hover:block">
                 Upload a PDF/DOC/TXT/MD file.
               </div>
               <button
                 type="button"
                 onClick={() => docInputRef.current?.click()}
                 disabled={isDemoMode}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-neutral-800/80 text-amber-400 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-50"
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/15 bg-white/15 text-white/85 transition-colors hover:bg-white/20 hover:text-white disabled:opacity-50"
                 title="Upload document"
               >
                 <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -377,9 +396,13 @@ export default function CenterPanel({
                 type="button"
                 onClick={handleSend}
                 disabled={isDemoMode}
-                className="btn-primary inline-flex h-10 items-center justify-center rounded-xl px-4 text-base font-semibold shadow-lg transition-all disabled:opacity-50"
+                aria-label="Send message"
+                title="Send message"
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/20 bg-white/75 text-neutral-950 shadow-lg shadow-black/20 transition-all hover:bg-white/85 disabled:opacity-50"
               >
-                Send
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M12 19V6m0 0-5 5m5-5 5 5" />
+                </svg>
               </button>
             )}
           </div>
@@ -389,4 +412,3 @@ export default function CenterPanel({
     </main>
   );
 }
-

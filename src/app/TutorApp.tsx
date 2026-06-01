@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import MainLayout, {
   type AgentSessionItem,
   type LearningActionType,
@@ -79,6 +79,7 @@ const QUIZ_TRIGGER =
 interface SessionData {
   id: string;
   title: string;
+  titleCustomized?: boolean;
   updatedAt: string;
   liveTurns: LiveTurn[];
   response: TutorResponse;
@@ -104,6 +105,19 @@ function newSession(): SessionData {
   };
 }
 
+function displayModeForSession(session: SessionData): "teach" | "quiz" {
+  const hasCozeQuiz = Boolean(
+    session.cozePackage?.quiz?.question &&
+      session.cozePackage.quiz.options?.length &&
+      !session.cozeQuizDismissed,
+  );
+  const hasLegacyQuiz = Boolean(
+    !session.quizCleared &&
+      session.quizSession?.questions?.length,
+  );
+  return hasCozeQuiz || hasLegacyQuiz ? "quiz" : "teach";
+}
+
 const LEARNING_PROMPTS: Record<LearningActionType, string> = {
   concept_overview:
     "Give me a concept overview of the current topic. " +
@@ -126,6 +140,15 @@ const LEARNING_PROMPTS: Record<LearningActionType, string> = {
     "Fill sessionSummary with covered topics, weakTopic with any weak points, and nextRecommendation with what to study next. Set mode to \"review\".",
 };
 
+const LEARNING_DISPLAY: Record<LearningActionType, string> = {
+  concept_overview: "📖 Concept overview",
+  guided_examples: "🔍 Guided examples",
+  quiz_check: "⚡ Quiz check",
+  mind_map: "🗺 Mind map",
+  answer_repair: "🔧 Answer repair",
+  session_review: "✓ Session review",
+};
+
 export default function TutorApp() {
   const [sessions, setSessions] = useState<SessionData[]>(() => [newSession()]);
   const [activeSessionId, setActiveSessionId] = useState<string>(() => sessions[0]!.id);
@@ -134,10 +157,13 @@ export default function TutorApp() {
 
   const abortRef = useRef<AbortController | null>(null);
   const activeIdRef = useRef(activeSessionId);
-  activeIdRef.current = activeSessionId;
   const pendingQuizIntentRef = useRef(false);
 
   const active = sessions.find((s) => s.id === activeSessionId) ?? sessions[0]!;
+
+  useEffect(() => {
+    activeIdRef.current = activeSessionId;
+  }, [activeSessionId]);
 
   const patchSession = useCallback((sessionId: string, patch: Partial<SessionData>) => {
     const now = new Date().toISOString();
@@ -188,7 +214,7 @@ export default function TutorApp() {
 
       patchSession(sid, {
         liveTurns: [...session.liveTurns, userTurn],
-        title: isFirstUserMessage ? (display.slice(0, 40) || "Chat") : session.title,
+        title: isFirstUserMessage && !session.titleCustomized ? (display.slice(0, 40) || "Chat") : session.title,
         ...(wantQuiz
           ? {
               cozePackage: { ...session.cozePackage, quiz: null },
@@ -289,15 +315,6 @@ export default function TutorApp() {
   const onCancelSend = useCallback(() => {
     abortRef.current?.abort();
   }, []);
-
-  const LEARNING_DISPLAY: Record<LearningActionType, string> = {
-    concept_overview: "📖 Concept overview",
-    guided_examples: "🔍 Guided examples",
-    quiz_check: "⚡ Quiz check",
-    mind_map: "🗺 Mind map",
-    answer_repair: "🔧 Answer repair",
-    session_review: "✓ Session review",
-  };
 
   const onLearningAction = useCallback(
     async (action: LearningActionType) => {
@@ -422,9 +439,47 @@ export default function TutorApp() {
     setDisplayMode("teach");
   }, []);
 
-  const onSwitchSession = useCallback((sessionId: string) => {
-    setActiveSessionId(sessionId);
+  const onRenameSession = useCallback((sessionId: string, title: string) => {
+    setSessions((prev) =>
+      prev.map((s) =>
+        s.id === sessionId
+          ? {
+              ...s,
+              title,
+              titleCustomized: true,
+              updatedAt: new Date().toISOString(),
+            }
+          : s,
+      ),
+    );
   }, []);
+
+  const onDeleteSession = useCallback((sessionId: string) => {
+    setSessions((prev) => {
+      const remaining = prev.filter((s) => s.id !== sessionId);
+      if (remaining.length === 0) {
+        const fresh = newSession();
+        setActiveSessionId(fresh.id);
+        setDisplayMode("teach");
+        return [fresh];
+      }
+      setActiveSessionId((current) => {
+        if (current !== sessionId) return current;
+        const next = remaining[0]!;
+        setDisplayMode(displayModeForSession(next));
+        return next.id;
+      });
+      return remaining;
+    });
+  }, []);
+
+  const onSwitchSession = useCallback((sessionId: string) => {
+    const target = sessions.find((s) => s.id === sessionId);
+    if (target) {
+      setDisplayMode(displayModeForSession(target));
+    }
+    setActiveSessionId(sessionId);
+  }, [sessions]);
 
   const onRequestRepair = useCallback(
     async (wrongAnswer: string, question: string): Promise<RepairResult | null> => {
@@ -627,6 +682,8 @@ export default function TutorApp() {
       activeSessionId={activeSessionId}
       onSwitchSession={onSwitchSession}
       onCreateSession={onCreateSession}
+      onRenameSession={onRenameSession}
+      onDeleteSession={onDeleteSession}
       onLearningAction={onLearningAction}
       notebookEntries={active.notebookEntries}
       currentTopic={active.title}

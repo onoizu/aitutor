@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import type { HeadingBlock as HeadingBlockType } from "@/types/notebook";
 
 interface HeadingBlockProps {
@@ -8,18 +8,8 @@ interface HeadingBlockProps {
   onUpdate: (block: HeadingBlockType) => void;
 }
 
-const Tag = ({ level }: { level: 1 | 2 | 3 }) => {
-  const sizes = { 1: "text-2xl", 2: "text-xl", 3: "text-lg" };
-  const TagName = `h${level}` as "h1" | "h2" | "h3";
-  return <TagName className={`font-semibold text-white ${sizes[level]}`} />;
-};
-
 export default function HeadingBlock({ block, onUpdate }: HeadingBlockProps) {
   const [content, setContent] = useState(block.content);
-
-  useEffect(() => {
-    setContent(block.content);
-  }, [block.content]);
 
   const handleBlur = () => {
     if (content !== block.content) {

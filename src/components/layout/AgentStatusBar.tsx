@@ -3,17 +3,18 @@
 import type { TutorMode } from "@/types/tutor";
 import { cn } from "@/lib/cn";
 
-const MODES: { id: TutorMode; label: string; icon: string; iconColor: string }[] = [
-  { id: "teach", label: "Teach", icon: "", iconColor: "text-blue-400" },
-  { id: "quiz", label: "Quiz", icon: "", iconColor: "text-amber-400" },
-  { id: "repair", label: "Repair", icon: "", iconColor: "text-orange-400" },
-  { id: "review", label: "Review", icon: "", iconColor: "text-emerald-400" },
+const MODES: { id: TutorMode; label: string }[] = [
+  { id: "teach", label: "Teach" },
+  { id: "quiz", label: "Quiz" },
+  { id: "repair", label: "Repair" },
+  { id: "review", label: "Review" },
 ];
 
 interface AgentStatusBarProps {
   currentMode: TutorMode;
   className?: string;
 }
+
 
 export default function AgentStatusBar({ currentMode, className }: AgentStatusBarProps) {
   return (
@@ -39,9 +40,6 @@ export default function AgentStatusBar({ currentMode, className }: AgentStatusBa
                   : "text-white/70 hover:bg-white/5 hover:text-white",
               )}
             >
-              <span className={cn("text-sm", mode.iconColor, isActive && "badge-breathe")} aria-hidden>
-                {mode.icon}
-              </span>
               <span className="whitespace-nowrap">{mode.label}</span>
               {index < MODES.length - 1 && (
                 <span className="ml-1 hidden shrink-0 text-white/40 md:inline" aria-hidden>

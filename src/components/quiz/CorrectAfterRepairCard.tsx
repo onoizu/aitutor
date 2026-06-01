@@ -34,29 +34,31 @@ export default function CorrectAfterRepairCard({
     `Wrong Q: ${question.question.slice(0, 50)}${question.question.length > 50 ? "…" : ""}`,
   );
 
-  const summaryNoteEntry: NotebookEntry = {
-    id: `note-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    title: `Summary: ${question.question.slice(0, 40)}${question.question.length > 40 ? "…" : ""}`,
-    content: [
-      "## Where You Might Have Gone Wrong",
-      summary,
-      "",
-      "## Question",
-      question.question,
-      "",
-      "## My Wrong Answer",
-      wrongAnswer,
-      "",
-      "## Correct Answer",
-      typeof question.correctAnswer === "string"
-        ? question.options?.find((o) => o.id === question.correctAnswer)?.text ?? String(question.correctAnswer)
-        : "",
-      "",
-      "## Explanation",
-      question.explanation,
-    ].join("\n"),
-    sourceType: "repair",
-    createdAt: new Date().toISOString(),
+  const createSummaryNoteEntry = (): NotebookEntry => {
+    return {
+      id: `note-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      title: `Summary: ${question.question.slice(0, 40)}${question.question.length > 40 ? "…" : ""}`,
+      content: [
+        "## Where You Might Have Gone Wrong",
+        summary,
+        "",
+        "## Question",
+        question.question,
+        "",
+        "## My Wrong Answer",
+        wrongAnswer,
+        "",
+        "## Correct Answer",
+        typeof question.correctAnswer === "string"
+          ? question.options?.find((o) => o.id === question.correctAnswer)?.text ?? String(question.correctAnswer)
+          : "",
+        "",
+        "## Explanation",
+        question.explanation,
+      ].join("\n"),
+      sourceType: "repair",
+      createdAt: new Date().toISOString(),
+    };
   };
 
   return (
@@ -96,7 +98,7 @@ export default function CorrectAfterRepairCard({
         <div className="flex flex-wrap items-center gap-2 pt-2">
           {onAddToNotes && (
             <AddToNotesButton
-              onClick={() => onAddToNotes(summaryNoteEntry)}
+              onClick={() => onAddToNotes(createSummaryNoteEntry())}
               label="Add to Notes"
             />
           )}

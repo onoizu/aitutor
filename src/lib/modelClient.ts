@@ -8,6 +8,17 @@ export interface ChatMessage {
   content: string;
 }
 
+interface ChatCompletionResponse {
+  choices?: Array<{
+    message?: {
+      content?: string;
+    };
+  }>;
+  output?: {
+    text?: string;
+  };
+}
+
 function getConfig() {
   return {
     apiUrl: process.env.CUSTOM_API_URL ?? "",
@@ -50,7 +61,7 @@ export async function chatCompletion(messages: ChatMessage[]): Promise<string> {
     throw new Error(`Qwen API failed: ${res.status}`);
   }
 
-  const data: any = await res.json();
+  const data = (await res.json()) as ChatCompletionResponse;
   return (
     data.choices?.[0]?.message?.content ??
     data.output?.text ??

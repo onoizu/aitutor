@@ -46,7 +46,10 @@ export default function NotebookEntryCard({
   }
 
   const handleSaveRef = useRef(handleSave);
-  handleSaveRef.current = handleSave;
+
+  useEffect(() => {
+    handleSaveRef.current = handleSave;
+  });
 
   // Debounced auto-save when content or title changes
   useEffect(() => {
@@ -130,7 +133,7 @@ export default function NotebookEntryCard({
             <button
               type="button"
               onClick={() => setIsEditing(true)}
-              className="rounded px-2 py-1 text-xs text-white/70 hover:text-white hover:bg-white/10"
+              className="rounded-md px-3 py-1.5 text-sm font-semibold text-white/85 transition-colors hover:bg-white/10 hover:text-white md:text-base"
             >
               Edit
             </button>
@@ -148,7 +151,7 @@ export default function NotebookEntryCard({
         </div>
       </div>
       {isEditing ? (
-        <div className={`rounded-lg overflow-hidden ${expanded ? "min-h-[60vh]" : ""}`}>
+        <div className={`rounded-lg overflow-visible ${expanded ? "min-h-[60vh]" : ""}`}>
           <BlockList content={editContent} onContentChange={setEditContent} />
         </div>
       ) : (

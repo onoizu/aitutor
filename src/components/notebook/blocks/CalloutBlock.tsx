@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import type { CalloutBlock as CalloutBlockType } from "@/types/notebook";
 
 const VARIANT_STYLES: Record<
@@ -20,10 +20,6 @@ interface CalloutBlockProps {
 
 export default function CalloutBlock({ block, onUpdate }: CalloutBlockProps) {
   const [content, setContent] = useState(block.content);
-
-  useEffect(() => {
-    setContent(block.content);
-  }, [block.content]);
 
   const handleBlur = () => {
     if (content !== block.content) {

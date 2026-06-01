@@ -67,6 +67,8 @@ interface MainLayoutProps {
   activeSessionId?: string;
   onSwitchSession?: (sessionId: string) => void;
   onCreateSession?: () => void;
+  onRenameSession?: (sessionId: string, title: string) => void;
+  onDeleteSession?: (sessionId: string) => void;
   onLearningAction?: (action: LearningActionType) => void;
   currentTopic?: string;
   currentGoal?: string;
@@ -109,6 +111,8 @@ export default function MainLayout({
   activeSessionId,
   onSwitchSession,
   onCreateSession,
+  onRenameSession,
+  onDeleteSession,
   onLearningAction,
   currentTopic,
   currentGoal,
@@ -145,6 +149,8 @@ export default function MainLayout({
           activeSessionId={activeSessionId}
           onSwitchSession={onSwitchSession}
           onCreateSession={onCreateSession}
+          onRenameSession={onRenameSession}
+          onDeleteSession={onDeleteSession}
           onLearningAction={onLearningAction}
         />
 
@@ -196,4 +202,3 @@ export default function MainLayout({
     </div>
   );
 }
-

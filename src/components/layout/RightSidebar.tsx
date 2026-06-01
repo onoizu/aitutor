@@ -116,9 +116,6 @@ export default function RightSidebar({
           Study Studio
         </div>
         <div className="mt-2 h-px w-full bg-white/15" />
-        <p className="mt-1 text-xs text-white/70">
-          Study outputs, recommendations, and notebook workflow.
-        </p>
 
         <section
           className="group relative mt-3 rounded-lg border border-amber-300/20 bg-amber-300/10 p-3 ring-1 ring-white/10"

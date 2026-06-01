@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import AIStatus from "@/components/AIStatus";
 import RobotTutorIcon from "@/components/icons/RobotTutorIcon";
 import CurrentLearningGoalPanel from "@/components/panels/CurrentLearningGoalPanel";
@@ -13,6 +14,8 @@ interface LeftSidebarProps {
   activeSessionId?: string;
   onSwitchSession?: (sessionId: string) => void;
   onCreateSession?: () => void;
+  onRenameSession?: (sessionId: string, title: string) => void;
+  onDeleteSession?: (sessionId: string) => void;
   onLearningAction?: (action: LearningActionType) => void;
 }
 
@@ -44,8 +47,23 @@ export default function LeftSidebar({
   activeSessionId,
   onSwitchSession,
   onCreateSession,
+  onRenameSession,
+  onDeleteSession,
   onLearningAction,
 }: LeftSidebarProps) {
+  const [menuSessionId, setMenuSessionId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!menuSessionId) return;
+    const close = () => setMenuSessionId(null);
+    window.addEventListener("click", close);
+    window.addEventListener("keydown", close);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("keydown", close);
+    };
+  }, [menuSessionId]);
+
   return (
     <aside className="order-2 flex min-h-0 flex-col gap-4 overflow-y-auto rounded-2xl border border-white/10 bg-neutral-900/85 p-4 shadow-[0_6px_24px_rgba(0,0,0,0.35)] lg:order-1 lg:gap-5 lg:p-5">
       {/* Brand */}
@@ -78,21 +96,56 @@ export default function LeftSidebar({
         {sessions.length > 0 ? (
           <ul className="space-y-1.5">
             {sessions.map((session) => (
-              <li key={session.id}>
-                <button
-                  type="button"
+              <li key={session.id} className="relative">
+                <div
                   onClick={() => onSwitchSession?.(session.id)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setMenuSessionId(session.id);
+                  }}
                   className={`w-full rounded-lg px-2.5 py-2 text-left text-sm transition-colors ${
                     activeSessionId === session.id
                       ? "bg-white/18 text-white ring-1 ring-white/35 shadow-[0_0_0_1px_rgba(255,255,255,0.08)]"
                       : "bg-white/5 text-white/90 hover:bg-white/10"
                   }`}
                 >
-                  <div className="truncate font-medium">{session.title}</div>
+                  <input
+                    value={session.title}
+                    onChange={(e) => onRenameSession?.(session.id, e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    onFocus={() => onSwitchSession?.(session.id)}
+                    onBlur={(e) => {
+                      if (!e.currentTarget.value.trim()) {
+                        onRenameSession?.(session.id, "Untitled Session");
+                      }
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") e.currentTarget.blur();
+                    }}
+                    aria-label={`Rename session ${session.title}`}
+                    className="w-full rounded-md border border-transparent bg-transparent px-1 py-0.5 font-medium text-white outline-none transition-colors hover:border-white/10 hover:bg-black/10 focus:border-cyan-200/40 focus:bg-black/20 focus:ring-1 focus:ring-cyan-200/20"
+                  />
                   <div className="mt-0.5 text-[11px] text-white/60">
                     {new Date(session.updatedAt).toLocaleString()}
                   </div>
-                </button>
+                </div>
+                {menuSessionId === session.id && onDeleteSession && (
+                  <div
+                    className="absolute right-2 top-2 z-40 min-w-[120px] rounded-lg border border-red-300/20 bg-neutral-950 py-1 shadow-2xl ring-1 ring-white/10"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onDeleteSession(session.id);
+                        setMenuSessionId(null);
+                      }}
+                      className="w-full px-3 py-2 text-left text-xs font-medium text-red-200 transition-colors hover:bg-red-500/15 hover:text-red-100"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                )}
               </li>
             ))}
           </ul>

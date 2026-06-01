@@ -1,7 +1,6 @@
 "use client";
 
 import MessageBubble from "@/components/MessageBubble";
-import TutorAvatar from "@/components/TutorAvatar";
 import ExplanationCard from "@/components/cards/ExplanationCard";
 import MindMapCard from "@/components/cards/MindMapCard";
 import QuizCard from "@/components/cards/QuizCard";
@@ -77,12 +76,11 @@ export default function LiveChat({ turns, isGenerating, onAddToNotes, onRequestH
       })}
       {isGenerating && (
         <div
-          className="flex items-center gap-3 justify-start py-0.5"
+          className="flex items-center justify-start py-0.5"
           role="status"
           aria-live="polite"
         >
           <span className="sr-only">Generating response</span>
-          <TutorAvatar variant="tutor" />
           <div
             className="flex items-center gap-1.5 rounded-2xl border border-white/10 bg-neutral-900/70 px-3.5 py-2.5 shadow-[0_0_24px_-4px_rgba(34,211,238,0.15)] ring-1 ring-white/[0.06] backdrop-blur-sm"
             aria-hidden
