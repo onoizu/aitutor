@@ -7,7 +7,7 @@ Adaptive AI Tutor Agent 是一个面向计算机科学与 AI 学习场景的自�
 ## 核心能力
 
 - **自适应教学 Agent**：根据用户输入、当前模式、学习状态、薄弱点和历史上下文，动态切换 Teach、Quiz、Repair、Review 等学习流程。
-- **RAG / 文档增强问答**：支持上传 PDF、DOC、DOCX、TXT、MD 等学习资料，系统会解析文档文本并注入到 tutor prompt 中，让回答围绕用户资料展开。
+- **RAG / 文档增强问答**：支持上传 PDF、DOC、DOCX、TXT、MD 等本地学习资料，系统会在本地解析文档文本，并将文档内容作为上下文注入 tutor prompt，让回答围绕用户上传的资料展开。
 - **多模态输入**：支持图片上传，并通过 Coze 文件接口把图片作为视觉学习上下文传给智能体，用于图像分析、题目讲解、截图理解等场景。
 - **会话级记忆**：每个 session 独立维护对话轮次、Coze conversation id、学习状态、测验状态、笔记和推荐内容，避免不同学习任务互相污染。
 - **学习状态建模**：Agent 输出统一的结构化学习包，包括 `mode`、`learningState`、`weakTopic`、`nextRecommendation`、`sessionSummary`、`resources`、`quiz`、`noteEntry` 等字段。
