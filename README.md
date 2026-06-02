@@ -104,26 +104,6 @@ src/types/tutor.ts                   # Tutor UI 与学习状态类型
 npm install
 ```
 
-## 配置环境变量
-
-在项目根目录创建 `.env.local`：
-
-```bash
-COZE_API_TOKEN=pat_xxx
-COZE_BOT_ID=你的智能体ID
-COZE_API_BASE_URL=https://api.coze.cn
-
-CUSTOM_API_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-CUSTOM_API_KEY=你的模型API_KEY
-CUSTOM_MODEL_ID=qwen-plus
-```
-
-说明：
-
-- `COZE_API_TOKEN` 必须是 Coze PAT，不是 OAuth 授权链接。
-- 国内 Coze 使用 `https://api.coze.cn`，国际 Coze 使用 `https://api.coze.com`，要和 Token 区域一致。
-- `COZE_BOT_ID` 也可以用 `COZE_AGENT_ID` 代替。
-- `CUSTOM_*` 用于 OpenAI-compatible 的大模型接口，作为备用模型调用层。
 
 ## 本地开发
 
