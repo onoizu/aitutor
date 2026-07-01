@@ -44,6 +44,85 @@ function buildCozeCorrectAfterRepairUserMessage(p: {
   );
 }
 
+const QUIZ_REQUEST_RE =
+  /\b(q?uiz|测验|测试|出题|做题|小测|练习|来道题|考考我|quick\s*check)\b/i;
+
+function isQuizRequest(text: string): boolean {
+  return QUIZ_REQUEST_RE.test(text);
+}
+
+function quizTopicFrom(text: string): string {
+  const clean = text
+    .replace(/\[Context:[\s\S]*?\]\s*/g, "")
+    .replace(/This is a quiz request[\s\S]*/i, "")
+    .trim();
+  const match = clean.match(/\b(?:about|on|for)\s+([^.?。！？\n]+)/i);
+  return (match?.[1] ?? clean.replace(QUIZ_REQUEST_RE, "")).trim().slice(0, 80) || "the current topic";
+}
+
+function temporaryQuizPackage(query: string, err: unknown): ReturnType<typeof normalizeCozeAgentPackage> {
+  const topic = quizTopicFrom(query);
+  const reason = err instanceof Error ? err.message : String(err);
+
+  if (/linear\s+regression/i.test(topic)) {
+    return {
+      ...EMPTY_COZE_PACKAGE,
+      mode: "quiz",
+      learningState: "ready_for_quiz",
+      mainResponse: {
+        summary: `Coze is temporarily unavailable, so here is a local quiz card for ${topic}.`,
+      },
+      quiz: {
+        question: "What is the primary goal of linear regression?",
+        options: [
+          "A) To classify inputs into discrete categories",
+          "B) To model the relationship between input variables and a continuous target",
+          "C) To group similar data points without labels",
+          "D) To remove all error from a dataset before training",
+        ],
+        correctAnswer: "B",
+        explanation:
+          "Linear regression learns a linear relationship that predicts a continuous value from one or more input features.",
+        hint: "Think about whether the target is a category or a numeric value.",
+      },
+      weakTopic: "Linear regression objective",
+      nextRecommendation: "Review cost functions and the meaning of residual error in linear regression.",
+      noteEntry: {
+        title: "Linear regression quiz",
+        content: `Temporary local quiz generated because Coze returned: ${reason.slice(0, 180)}`,
+      },
+    };
+  }
+
+  return {
+    ...EMPTY_COZE_PACKAGE,
+    mode: "quiz",
+    learningState: "ready_for_quiz",
+    mainResponse: {
+      summary: `Coze is temporarily unavailable, so here is a local quiz card for ${topic}.`,
+    },
+    quiz: {
+      question: `Which study action best checks whether you understand ${topic}?`,
+      options: [
+        "A) Memorize one sentence without applying it",
+        "B) Explain the idea in your own words and test it on a small example",
+        "C) Skip examples and move to a new topic immediately",
+        "D) Only reread the title of the lesson",
+      ],
+      correctAnswer: "B",
+      explanation:
+        "A good quiz checks understanding by requiring explanation and transfer to a concrete example.",
+      hint: "Choose the option that asks you to actively apply the idea.",
+    },
+    weakTopic: topic,
+    nextRecommendation: `Try one worked example for ${topic}, then ask for another quiz.`,
+    noteEntry: {
+      title: `${topic} quiz`,
+      content: `Temporary local quiz generated because Coze returned: ${reason.slice(0, 180)}`,
+    },
+  };
+}
+
 function jsonResult(
   pkg: ReturnType<typeof normalizeCozeAgentPackage>,
   conversationId: string,
@@ -290,6 +369,15 @@ export async function POST(req: Request) {
           } catch (err) {
             console.error("[tutor] stream failed", err);
             clearInterval(heartbeat);
+            if (isQuizRequest(userQueryForRetrieval || userMessage)) {
+              const runtimeId = incomingConversationId || getOrCreateSession().conversationId;
+              const pkg = temporaryQuizPackage(userQueryForRetrieval || userMessage, err);
+              const payload = jsonResult(pkg, runtimeId);
+              send({ t: "done", response: payload });
+              streamClosed = true;
+              controller.close();
+              return;
+            }
             send({ t: "error", e: String(err) });
             streamClosed = true;
             controller.close();
@@ -391,13 +479,15 @@ export async function POST(req: Request) {
     return NextResponse.json(payload);
   } catch (err) {
     console.error("Tutor model request failed", err);
-    const fallbackPkg = {
-      ...EMPTY_COZE_PACKAGE,
-      mainResponse: {
-        summary: `Coze request failed: ${err instanceof Error ? err.message : String(err)}`,
-      },
-    };
     const fid = incomingConversationId || getOrCreateSession().conversationId;
+    const fallbackPkg = isQuizRequest(userQueryForRetrieval || userMessage)
+      ? temporaryQuizPackage(userQueryForRetrieval || userMessage, err)
+      : {
+          ...EMPTY_COZE_PACKAGE,
+          mainResponse: {
+            summary: `Coze request failed: ${err instanceof Error ? err.message : String(err)}`,
+          },
+        };
     return NextResponse.json(jsonResult(fallbackPkg, fid));
   }
 }
