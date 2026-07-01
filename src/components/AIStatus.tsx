@@ -18,7 +18,7 @@ export default function AIStatus() {
       .catch(() =>
         setStatus({
           ok: false,
-          source: "mock",
+          source: "unavailable",
           message: "Unable to fetch connection status",
         }),
       );
@@ -33,10 +33,10 @@ export default function AIStatus() {
     );
   }
 
-  const isConnected = status.source !== "mock";
+  const isConnected = status.ok && status.source !== "unavailable";
   const label = isConnected
     ? `Connected to ${status.source}`
-    : "Local demo";
+    : "AI unavailable";
 
   return (
     <div

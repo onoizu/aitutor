@@ -1,12 +1,17 @@
 import { NextResponse } from "next/server";
 import type { TutorResponse } from "@/types/tutor";
-import { teachModeExample } from "@/data/mockTutorData";
 import { cozeChatCompletion } from "@/lib/cozeClient";
 import { addMessage, getOrCreateSession } from "@/lib/tutorSession";
 import { extractTextFromFile } from "@/lib/documentParser";
-import type { ChatMessage } from "@/lib/modelClient";
+import { chatCompletion, type ChatMessage } from "@/lib/modelClient";
 import { normalizeCozeAgentPackage, EMPTY_COZE_PACKAGE } from "@/lib/normalizeAgentPackage";
 import { cozePackageToTutorResponse } from "@/lib/cozePackageAdapter";
+import { formatCourseContext, ingestCourseDocument, retrieveCourseContext } from "@/lib/ragStore";
+import {
+  formatLearnerMemoryContext,
+  getLearnerMemory,
+  updateLearnerMemoryFromPackage,
+} from "@/lib/learnerMemoryStore";
 
 export const maxDuration = 120;
 
@@ -51,6 +56,67 @@ function jsonResult(
   };
 }
 
+async function buildPersistentContext(input: {
+  sessionId: string;
+  query: string;
+}): Promise<string> {
+  const parts: string[] = [];
+
+  try {
+    const memory = await getLearnerMemory(input.sessionId);
+    const memoryContext = formatLearnerMemoryContext(memory);
+    if (memoryContext) {
+      parts.push(`[Persistent learner memory]\n${memoryContext}`);
+    }
+  } catch (err) {
+    console.warn("[tutor/route] learner memory unavailable:", err);
+  }
+
+  try {
+    const retrieved = await retrieveCourseContext(input.query, {
+      sessionId: input.sessionId,
+      limit: 5,
+    });
+    const courseContext = formatCourseContext(retrieved);
+    if (courseContext) {
+      parts.push(
+        `[Retrieved course-grounded context]\n` +
+          `Use this material when relevant. If it conflicts with general knowledge, prefer the course material.\n\n` +
+          courseContext,
+      );
+    }
+  } catch (err) {
+    console.warn("[tutor/route] course retrieval unavailable:", err);
+  }
+
+  return parts.join("\n\n");
+}
+
+async function callTutorModel(
+  messages: ChatMessage[],
+  conversationId: string | undefined,
+  imageFile: File | null,
+  clientSessionId: string | undefined,
+): Promise<{ text: string; conversationId: string; provider: "coze" | "custom" }> {
+  try {
+    const result = await cozeChatCompletion(
+      messages,
+      conversationId,
+      imageFile,
+      clientSessionId,
+    );
+    return { ...result, provider: "coze" };
+  } catch (cozeErr) {
+    console.error("Coze API request failed; trying custom model fallback", cozeErr);
+    const text = await chatCompletion(messages);
+    return {
+      text,
+      conversationId: conversationId || clientSessionId || getOrCreateSession().conversationId,
+      provider: "custom",
+    };
+  }
+}
+
 export async function POST(req: Request) {
   const url = new URL(req.url);
   const useStream = url.searchParams.get("stream") === "1";
@@ -61,6 +127,7 @@ export async function POST(req: Request) {
   let clientSessionId: string | undefined;
   let correctAfterRepairPayload: TutorRequestBody["correctAfterRepair"] | undefined;
   let imageFile: File | null = null;
+  let userQueryForRetrieval = "";
 
   const contentType = req.headers.get("content-type") ?? "";
   if (contentType.includes("multipart/form-data")) {
@@ -80,8 +147,15 @@ export async function POST(req: Request) {
       );
       const docText = await extractTextFromFile(documentFile);
       const prompt = userMessage || "Answer based on this document";
+      userQueryForRetrieval = prompt;
       if (docText) {
         console.log("[tutor/route] document parsed OK, text length=%d", docText.length);
+        await ingestCourseDocument({
+          title: documentFile.name,
+          text: docText,
+          fileType: documentFile.type || documentFile.name.split(".").pop(),
+          sessionId: clientSessionId,
+        });
         userMessage = `[Document "${documentFile.name}" content below]\n\n${docText}\n\n[User question] ${prompt}`;
       } else {
         console.warn("[tutor/route] document extraction returned empty for:", documentFile.name);
@@ -100,9 +174,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
     }
     userMessage = body.message?.trim() ?? "";
+    userQueryForRetrieval = userMessage;
     incomingConversationId = body.conversationId;
     clientSessionId = body.sessionId?.trim() || undefined;
     correctAfterRepairPayload = body.correctAfterRepair;
+  }
+
+  if (!userQueryForRetrieval) {
+    userQueryForRetrieval = correctAfterRepairPayload?.question ?? userMessage;
   }
 
   const hasImage = Boolean(imageFile && imageFile.size > 0);
@@ -117,19 +196,35 @@ export async function POST(req: Request) {
       "\n\n[Document truncated for API. Consider summarizing before asking.]";
   }
 
+  const persistentSessionId =
+    clientSessionId || incomingConversationId || getOrCreateSession().conversationId;
+  const persistentContext = await buildPersistentContext({
+    sessionId: persistentSessionId,
+    query: userQueryForRetrieval || userMessage,
+  });
+
   let messages: ChatMessage[];
   if (correctAfterRepairPayload) {
     messages = [
       {
         role: "user",
-        content: buildCozeCorrectAfterRepairUserMessage(correctAfterRepairPayload),
+        content:
+          (persistentContext ? `${persistentContext}\n\n` : "") +
+          buildCozeCorrectAfterRepairUserMessage(correctAfterRepairPayload),
       },
     ];
   } else {
     const text =
       userMessage ||
       (hasImage ? "Please answer based on the uploaded image and output only the agreed-upon JSON." : "");
-    messages = [{ role: "user", content: text }];
+    messages = [
+      {
+        role: "user",
+        content: persistentContext
+          ? `${persistentContext}\n\n[Current user request]\n${text}`
+          : text,
+      },
+    ];
   }
 
   try {
@@ -140,7 +235,7 @@ export async function POST(req: Request) {
           let rawText = "";
           let cozeConversationId = incomingConversationId ?? "";
           try {
-            const result = await cozeChatCompletion(
+            const result = await callTutorModel(
               messages,
               incomingConversationId,
               hasImage ? imageFile : null,
@@ -186,6 +281,11 @@ export async function POST(req: Request) {
             pkg.resources.length,
           );
           const payload = jsonResult(pkg, runtimeId);
+          await updateLearnerMemoryFromPackage({
+            sessionId: persistentSessionId,
+            userMessage: userQueryForRetrieval || userMessage,
+            pkg,
+          });
           controller.enqueue(
             encoder.encode(`data: ${JSON.stringify({ t: "done", response: payload })}\n\n`),
           );
@@ -201,7 +301,7 @@ export async function POST(req: Request) {
       });
     }
 
-    const cozeResult = await cozeChatCompletion(
+    const cozeResult = await callTutorModel(
       messages,
       incomingConversationId,
       hasImage ? imageFile : null,
@@ -235,10 +335,15 @@ export async function POST(req: Request) {
       pkg.resources.length,
     );
     const payload = jsonResult(pkg, runtimeId);
+    await updateLearnerMemoryFromPackage({
+      sessionId: persistentSessionId,
+      userMessage: userQueryForRetrieval || userMessage,
+      pkg,
+    });
 
     return NextResponse.json(payload);
   } catch (err) {
-    console.error("Coze API request failed", err);
+    console.error("Tutor model request failed", err);
     const fallbackPkg = {
       ...EMPTY_COZE_PACKAGE,
       mainResponse: {

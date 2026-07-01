@@ -131,6 +131,11 @@ const LEARNING_PROMPTS: Record<LearningActionType, string> = {
   answer_repair:
     "I think I have a misconception about what we just discussed. " +
     "Identify my likely weak point and explain it clearly. Fill weakTopic, and put the corrective explanation in mainResponse. Set mode to \"teach\".",
+  feynman_reflection:
+    "[Workflow: Feynman Reflection / Reverse Teaching]\n" +
+    "Start a Feynman reflection for the current topic. Ask me to explain the concept in my own words first. " +
+    "Then, when I answer, evaluate my explanation using this rubric: conceptual accuracy, missing prerequisites, clarity, and transfer to a new example. " +
+    "Flag incomplete or unclear ideas in weakTopic, ask one follow-up question, and update nextRecommendation. Set mode to \"review\" unless a repair explanation is needed.",
   mind_map:
     "Generate a mind map of the current topic using Mermaid mindmap syntax. " +
     "Put the raw Mermaid code (starting with \"mindmap\\n  root((...\") in a \"mindmap\" field with keys \"mermaidCode\" and \"title\". " +
@@ -138,6 +143,11 @@ const LEARNING_PROMPTS: Record<LearningActionType, string> = {
   session_review:
     "Generate a summary note for this session. " +
     "Fill sessionSummary with covered topics, weakTopic with any weak points, and nextRecommendation with what to study next. Set mode to \"review\".",
+  study_plan_checkin:
+    "[Workflow: Study Plan Check-in]\n" +
+    "Use the persistent learner memory and retrieved course context if provided. Review my open study plan, weak-topic profile, and recent session progress. " +
+    "Mark what appears completed, choose the next 1-3 concrete study actions, and generate a short check-in summary. " +
+    "Fill sessionSummary, weakTopic if a weakness remains, nextRecommendation with the highest-priority next action, and noteEntry with a study-plan note. Set mode to \"review\".",
 };
 
 const LEARNING_DISPLAY: Record<LearningActionType, string> = {
@@ -146,8 +156,28 @@ const LEARNING_DISPLAY: Record<LearningActionType, string> = {
   quiz_check: "⚡ Quiz check",
   mind_map: "🗺 Mind map",
   answer_repair: "🔧 Answer repair",
+  feynman_reflection: "🧠 Feynman reflection",
   session_review: "✓ Session review",
+  study_plan_checkin: "📌 Study plan",
 };
+
+const SESSION_STORAGE_KEY = "adaptive-ai-tutor.sessions.v3";
+
+function readStoredSessions(): { sessions: SessionData[]; activeSessionId?: string } | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { sessions?: SessionData[]; activeSessionId?: string };
+    if (!Array.isArray(parsed.sessions) || parsed.sessions.length === 0) return null;
+    return {
+      sessions: parsed.sessions,
+      activeSessionId: parsed.activeSessionId,
+    };
+  } catch {
+    return null;
+  }
+}
 
 export default function TutorApp() {
   const [sessions, setSessions] = useState<SessionData[]>(() => [newSession()]);
@@ -158,12 +188,38 @@ export default function TutorApp() {
   const abortRef = useRef<AbortController | null>(null);
   const activeIdRef = useRef(activeSessionId);
   const pendingQuizIntentRef = useRef(false);
+  const storageLoadedRef = useRef(false);
 
   const active = sessions.find((s) => s.id === activeSessionId) ?? sessions[0]!;
 
   useEffect(() => {
     activeIdRef.current = activeSessionId;
   }, [activeSessionId]);
+
+  useEffect(() => {
+    const stored = readStoredSessions();
+    if (stored) {
+      const restoredActiveId =
+        stored.activeSessionId && stored.sessions.some((s) => s.id === stored.activeSessionId)
+          ? stored.activeSessionId
+          : stored.sessions[0]!.id;
+      queueMicrotask(() => {
+        setSessions(stored.sessions);
+        setActiveSessionId(restoredActiveId);
+        const restoredActive = stored.sessions.find((s) => s.id === restoredActiveId);
+        if (restoredActive) setDisplayMode(displayModeForSession(restoredActive));
+      });
+    }
+    storageLoadedRef.current = true;
+  }, []);
+
+  useEffect(() => {
+    if (!storageLoadedRef.current || typeof window === "undefined") return;
+    window.localStorage.setItem(
+      SESSION_STORAGE_KEY,
+      JSON.stringify({ sessions, activeSessionId }),
+    );
+  }, [sessions, activeSessionId]);
 
   const patchSession = useCallback((sessionId: string, patch: Partial<SessionData>) => {
     const now = new Date().toISOString();
@@ -193,16 +249,17 @@ export default function TutorApp() {
       if (wantQuiz) setDisplayMode("quiz");
 
       let messageToSend = rawDisplay;
-      if (wantQuiz && !messageToSend.includes("[Context:")) {
+      if (wantQuiz) {
         const lastSummary = session.cozePackage?.mainResponse?.summary?.trim();
-        if (lastSummary) {
-          messageToSend =
-            `[Context: the current topic is "${session.title}". ` +
-            `Last tutor explanation summary: "${lastSummary.slice(0, 500)}"]\n\n` +
-            `${rawDisplay}\n\n` +
-            `Please generate a quiz question specifically about the topic above. ` +
-            `Set mode to "quiz" and fill in the quiz field (question, options, correctAnswer, explanation, hint).`;
-        }
+        const context =
+          `[Context: the current topic is "${session.title}".` +
+          (lastSummary ? ` Last tutor explanation summary: "${lastSummary.slice(0, 500)}"` : "") +
+          `]\n\n`;
+        messageToSend =
+          `${context}${rawDisplay}\n\n` +
+          `This is a quiz request. Return a quiz question card by setting mode to "quiz" and filling the quiz field. ` +
+          `The quiz field must include: question, options, correctAnswer, explanation, and hint. ` +
+          `Also update weakTopic, nextRecommendation, sessionSummary, resources, learningState, and noteEntry when relevant.`;
       }
 
       const userTurn: LiveTurn = {
@@ -217,9 +274,15 @@ export default function TutorApp() {
         title: isFirstUserMessage && !session.titleCustomized ? (display.slice(0, 40) || "Chat") : session.title,
         ...(wantQuiz
           ? {
-              cozePackage: { ...session.cozePackage, quiz: null },
+              cozePackage: {
+                ...EMPTY_COZE_PACKAGE,
+                mainResponse: { summary: "Generating quiz..." },
+                mode: "quiz",
+                learningState: "ready_for_quiz",
+              },
               cozeQuizDismissed: false,
               quizCleared: false,
+              quizSession: undefined,
             }
           : {}),
       });
@@ -241,7 +304,7 @@ export default function TutorApp() {
         const quizContentPresent = Boolean(rawPkg.quiz?.question && rawPkg.quiz.options?.length);
         const pkgBase =
           wantQuiz && quizContentPresent ? { ...rawPkg, mode: "quiz" } : rawPkg;
-        const pkg = mergeStickyCozeFields(session.cozePackage, pkgBase);
+        const pkg = mergeStickyCozeFields(pkgBase);
         const response = cozePackageToTutorResponse(pkg);
         const tutorTurn: LiveTurn = {
           id: uid(),
@@ -260,7 +323,7 @@ export default function TutorApp() {
           setDisplayMode("teach");
         }
 
-        const legacyQuiz = hasQuiz ? deriveQuizSession(response) : null;
+        const nextQuizSession = hasQuiz ? deriveQuizSession(response) : null;
 
         setSessions((prev) =>
           prev.map((s) => {
@@ -272,7 +335,7 @@ export default function TutorApp() {
               cozePackage: pkg,
               response,
               conversationId: conv,
-              quizSession: hasQuiz ? undefined : legacyQuiz ?? undefined,
+              quizSession: nextQuizSession ?? undefined,
               quizCleared: false,
               cozeQuizDismissed: false,
               updatedAt: new Date().toISOString(),
@@ -496,7 +559,7 @@ export default function TutorApp() {
           conversationId: session.conversationId || undefined,
         });
         const rawPkg = mergeFromApiResult(result);
-        const pkg = mergeStickyCozeFields(session.cozePackage, rawPkg);
+        const pkg = mergeStickyCozeFields(rawPkg);
         const response = cozePackageToTutorResponse(pkg);
         setSessions((prev) =>
           prev.map((s) =>
@@ -565,7 +628,7 @@ export default function TutorApp() {
           },
         });
         const rawPkg = mergeFromApiResult(result);
-        const merged = mergeStickyCozeFields(session.cozePackage, rawPkg);
+        const merged = mergeStickyCozeFields(rawPkg);
         const pkg = { ...merged, quiz: session.cozePackage?.quiz ?? merged.quiz };
         const response = cozePackageToTutorResponse(pkg);
         setSessions((prev) =>
@@ -663,7 +726,6 @@ export default function TutorApp() {
       showCozeQuiz={showCozeQuiz}
       onCozeQuizExit={onCozeQuizExit}
       onCozeCorrectAfterRepair={onCozeCorrectAfterRepair}
-      isDemoMode={false}
       liveTurns={active.liveTurns}
       onSendMessage={onSendMessage}
       onCancelSend={onCancelSend}

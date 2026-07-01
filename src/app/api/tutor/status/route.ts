@@ -16,7 +16,7 @@ export async function GET() {
 
   return NextResponse.json<TutorStatus>({
     ok: result.ok,
-    source: result.ok ? "coze" : "mock",
+    source: result.ok ? "coze" : "unavailable",
     message: result.message,
   });
 }

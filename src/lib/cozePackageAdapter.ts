@@ -179,7 +179,7 @@ function sessionSummaryFromPackage(pkg: CozeAgentPackage): SessionSummary | null
 /**
  * 供仍使用 TutorResponse 的卡片与类型系统消费；Coze 侧字段由 cozePackage 单独传给侧栏。
  */
-/** API 降级为本地 mock（无 cozePackage）时，从 TutorResponse 反推一份 Agent 包供 UI 使用 */
+/** 从 TutorResponse 反推一份 Agent 包供 UI 使用。 */
 export function inferCozePackageFromTutorResponse(tr: TutorResponse): CozeAgentPackage {
   const base: CozeAgentPackage = {
     ...EMPTY_COZE_PACKAGE,

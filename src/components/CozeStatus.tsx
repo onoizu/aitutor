@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 type Status = {
   ok: boolean;
-  source: "coze" | "mock";
+  source: "coze" | "unavailable";
   message: string;
 };
 
@@ -18,7 +18,7 @@ export default function CozeStatus() {
       .catch(() =>
         setStatus({
           ok: false,
-          source: "mock",
+          source: "unavailable",
           message: "Unable to fetch connection status",
         }),
       );
@@ -33,7 +33,7 @@ export default function CozeStatus() {
     );
   }
 
-  const isCoze = status.source === "coze";
+  const isCoze = status.ok && status.source === "coze";
   return (
     <div
       className={`flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs ${
@@ -49,7 +49,7 @@ export default function CozeStatus() {
         }`}
         aria-hidden
       />
-      {isCoze ? "Connected to Coze" : "Local Demo"}
+      {isCoze ? "Connected to Coze" : "Coze unavailable"}
     </div>
   );
 }

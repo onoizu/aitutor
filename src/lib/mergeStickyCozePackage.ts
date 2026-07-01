@@ -1,36 +1,12 @@
 import type { CozeAgentPackage } from "@/types/agentPackage";
 
-function weakTopicIsEmpty(w: CozeAgentPackage["weakTopic"]): boolean {
-  if (w == null || w === "") return true;
-  if (typeof w === "string") return !w.trim();
-  const label = (w.label ?? "").toString().trim();
-  const id = (w.id ?? "").toString().trim();
-  return !label && !id;
-}
-
 /**
- * When the model omits session-level fields, keep the previous turn’s values
- * so Study Studio (weak topic, session summary, resources) does not flicker empty.
+ * Keep this function as the single handoff point for Coze package merging.
+ * Study Studio fields intentionally follow the latest package exactly, so old
+ * weak topics, summaries, or resources never remain visible after a new turn.
  */
 export function mergeStickyCozeFields(
-  prev: CozeAgentPackage,
   next: CozeAgentPackage,
 ): CozeAgentPackage {
-  const resources =
-    next.resources?.length > 0 ? next.resources : [...(prev.resources ?? [])];
-
-  const sessionSummary = next.sessionSummary?.trim()
-    ? next.sessionSummary
-    : prev.sessionSummary?.trim()
-      ? prev.sessionSummary
-      : next.sessionSummary;
-
-  const weakTopic = weakTopicIsEmpty(next.weakTopic) ? prev.weakTopic : next.weakTopic;
-
-  return {
-    ...next,
-    resources,
-    sessionSummary,
-    weakTopic,
-  };
+  return next;
 }

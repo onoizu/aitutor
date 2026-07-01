@@ -31,15 +31,14 @@ export type LearningActionType =
   | "guided_examples"
   | "quiz_check"
   | "answer_repair"
+  | "feynman_reflection"
   | "session_review"
-  | "mind_map";
+  | "mind_map"
+  | "study_plan_checkin";
 
 interface MainLayoutProps {
   response: TutorResponse;
   children?: ReactNode;
-  /** Demo mode: show static mock chat; otherwise show live chat + input to Coze */
-  isDemoMode?: boolean;
-  onExitDemo?: () => void;
   liveTurns?: LiveTurn[];
   onSendMessage?: (text: string, image?: File, document?: File) => Promise<void>;
   onCancelSend?: () => void;
@@ -89,8 +88,6 @@ interface MainLayoutProps {
 export default function MainLayout({
   response,
   children,
-  isDemoMode = true,
-  onExitDemo,
   liveTurns = [],
   onSendMessage,
   onCancelSend,
@@ -140,7 +137,7 @@ export default function MainLayout({
 
   return (
     <div className="h-dvh w-full overflow-hidden bg-black text-white">
-      <div className="mx-auto grid h-full min-h-0 w-full max-w-[1720px] grid-cols-1 gap-3 overflow-y-auto px-3 py-3 sm:gap-4 sm:px-4 sm:py-4 md:gap-5 md:px-5 md:py-4 lg:grid-cols-[minmax(250px,19%)_minmax(0,58%)_minmax(320px,23%)] lg:overflow-hidden lg:gap-5 xl:gap-6">
+      <div className="mx-auto grid h-full min-h-0 w-full max-w-[1720px] grid-cols-1 grid-rows-[minmax(0,1fr)_minmax(140px,24%)_minmax(140px,24%)] gap-3 overflow-hidden px-3 py-3 sm:gap-4 sm:px-4 sm:py-4 md:gap-5 md:px-5 md:py-4 lg:grid-cols-[minmax(250px,19%)_minmax(0,58%)_minmax(320px,23%)] lg:grid-rows-1 lg:gap-5 xl:gap-6">
         <LeftSidebar
           topic={primaryTopic}
           modeLabel={modeLabel}
@@ -158,8 +155,6 @@ export default function MainLayout({
           response={response}
           currentTopic={primaryTopic}
           currentGoal={currentGoal}
-          isDemoMode={isDemoMode}
-          onExitDemo={onExitDemo}
           liveTurns={liveTurns}
           onSendMessage={onSendMessage}
           onCancelSend={onCancelSend}

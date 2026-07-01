@@ -1,11 +1,5 @@
 import type { CozeAgentPackage } from "@/types/agentPackage";
 import type { TutorResponse } from "@/types/tutor";
-import {
-  teachModeExample,
-  quizModeExample,
-  repairModeExample,
-  reviewModeExample,
-} from "@/data/mockTutorData";
 
 /** Options for sending a message to the tutor (e.g. Coze session id, image, document). */
 export interface SendMessageOptions {
@@ -73,7 +67,7 @@ async function consumeStreamResponse(
 /**
  * Sends a user message to the tutor and returns the structured tutor response.
  * In production this calls our Next.js API route, which proxies to Coze.
- * If anything fails, we gracefully fall back to local mock responses.
+ * If anything fails, the caller handles the error and shows a real failure state.
  *
  * @param userMessage - The student's message or question
  * @param options - Optional settings (e.g. sessionId, image file)
@@ -115,8 +109,8 @@ export async function sendMessage(
     }
 
     if (!res.ok) {
-      console.warn("Falling back to mock tutor due to API error");
-      return mockFetchTutorResponse(userMessage, { sessionId: options?.sessionId });
+      const body = await res.text().catch(() => "");
+      throw new Error(`Tutor API error ${res.status}: ${body.slice(0, 200)}`);
     }
 
     const contentType = res.headers.get("content-type") ?? "";
@@ -127,44 +121,7 @@ export async function sendMessage(
     const data = (await res.json()) as SendMessageResult;
     return data;
   } catch (err) {
-    console.error("Tutor API call failed, using mock response", err);
-    return mockFetchTutorResponse(userMessage, options);
+    console.error("Tutor API call failed", err);
+    throw err;
   }
-}
-
-
-/**
- * Mock implementation: simulates sending a message and receiving a TutorResponse.
- * Replace this with Coze API integration; keep the return type as TutorResponse.
- */
-async function mockFetchTutorResponse(
-  userMessage: string,
-  _options?: SendMessageOptions
-): Promise<TutorResponse> {
-  // Simulate network delay
-  await new Promise((r) => setTimeout(r, 300 + Math.random() * 200));
-
-  const normalized = userMessage.toLowerCase().trim();
-
-  // Simple keyword-based mock routing for demo; real Coze will replace this.
-  if (normalized.includes("quiz") || normalized.includes("quick check")) {
-    return { ...quizModeExample };
-  }
-  if (
-    normalized.includes("repair") ||
-    normalized.includes("wrong") ||
-    normalized.includes("fix")
-  ) {
-    return { ...repairModeExample };
-  }
-  if (
-    normalized.includes("summary") ||
-    normalized.includes("review") ||
-    normalized.includes("recap")
-  ) {
-    return { ...reviewModeExample };
-  }
-
-  // Default: teach / explanation
-  return { ...teachModeExample };
 }

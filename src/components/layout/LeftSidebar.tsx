@@ -25,6 +25,8 @@ const quickMenu = [
   { id: "quiz_check", label: "Quiz check", detail: "Generate one quiz question" },
   { id: "mind_map", label: "Mind map", detail: "Visual concept map of the topic" },
   { id: "answer_repair", label: "Answer repair", detail: "Fix recent misconception" },
+  { id: "feynman_reflection", label: "Feynman reflection", detail: "Explain it in your own words" },
+  { id: "study_plan_checkin", label: "Study plan", detail: "Review plan and next steps" },
   { id: "session_review", label: "Session review", detail: "Generate summary note" },
 ] as const;
 

@@ -6,7 +6,6 @@ import type { TutorResponse, QuizSession, RepairResult } from "@/types/tutor";
 import type { NotebookEntry } from "@/types/notebook";
 import type { CozeAgentPackage } from "@/types/agentPackage";
 import type { LiveTurn } from "@/components/layout/MainLayout";
-import ChatWindow from "@/components/ChatWindow";
 import LiveChat from "@/components/LiveChat";
 import AgentStatusBar from "@/components/layout/AgentStatusBar";
 import QuizPaginationView from "@/components/quiz/QuizPaginationView";
@@ -17,8 +16,6 @@ interface CenterPanelProps {
   currentTopic?: string;
   currentGoal?: string;
   children?: ReactNode;
-  isDemoMode?: boolean;
-  onExitDemo?: () => void;
   liveTurns?: LiveTurn[];
   onSendMessage?: (text: string, image?: File, document?: File) => Promise<void>;
   onCancelSend?: () => void;
@@ -59,6 +56,10 @@ const QUICK_CARDS = [
     prompt: "Create a mind map for the current topic.",
   },
   {
+    label: "Feynman",
+    prompt: "Start a Feynman reflection. Ask me to explain the current topic in my own words, then evaluate my answer.",
+  },
+  {
     label: "Review",
     prompt: "Summarize this session and suggest the next study step.",
   },
@@ -69,8 +70,6 @@ export default function CenterPanel({
   currentTopic,
   currentGoal,
   children,
-  isDemoMode = true,
-  onExitDemo,
   liveTurns = [],
   onSendMessage,
   onCancelSend,
@@ -228,24 +227,7 @@ export default function CenterPanel({
         ) : (
           <>
             <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4 md:px-6 md:py-6">
-              {isDemoMode ? (
-                <>
-                  <ChatWindow onAddToNotes={onAddToNotes} onRequestHint={onRequestHint} />
-                  {onExitDemo && (
-                    <div className="flex justify-center pt-2">
-                      <button
-                        type="button"
-                        onClick={onExitDemo}
-                        className="rounded-xl border border-white/30 bg-white/10 px-4 py-2 text-base font-medium text-white ring-1 ring-white/20 transition-colors hover:bg-white/15"
-                      >
-                        Exit demo, use live chat
-                      </button>
-                    </div>
-                  )}
-                </>
-              ) : (
-                <LiveChat turns={liveTurns} isGenerating={sending} onAddToNotes={onAddToNotes} onRequestHint={onRequestHint} />
-              )}
+              <LiveChat turns={liveTurns} isGenerating={sending} onAddToNotes={onAddToNotes} onRequestHint={onRequestHint} />
               {children}
             </div>
 
@@ -270,7 +252,7 @@ export default function CenterPanel({
                   key={card.label}
                   type="button"
                   onClick={() => applyQuickCard(card.prompt)}
-                  disabled={isDemoMode || sending}
+                  disabled={sending}
                   className="shrink-0 rounded-lg border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs font-medium text-white/85 transition-colors hover:border-cyan-200/35 hover:bg-cyan-300/10 hover:text-white disabled:opacity-45"
                 >
                   {card.label}
@@ -344,7 +326,6 @@ export default function CenterPanel({
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                disabled={isDemoMode}
                 className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/15 bg-white/15 text-white/85 transition-colors hover:bg-white/20 hover:text-white disabled:opacity-50"
                 title="Upload image"
               >
@@ -360,7 +341,6 @@ export default function CenterPanel({
               <button
                 type="button"
                 onClick={() => docInputRef.current?.click()}
-                disabled={isDemoMode}
                 className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/15 bg-white/15 text-white/85 transition-colors hover:bg-white/20 hover:text-white disabled:opacity-50"
                 title="Upload document"
               >
@@ -376,11 +356,8 @@ export default function CenterPanel({
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && handleSend()}
               placeholder={
-                isDemoMode
-                  ? "Ask the tutor about this topic… (input disabled in demo mode)"
-                  : "Type a message, upload an image or document, press Enter to send…"
+                "Type a message, upload an image or document, press Enter to send…"
               }
-              disabled={isDemoMode}
               className="h-10 flex-1 rounded-xl border border-white/10 bg-neutral-900/80 px-3 text-base text-white placeholder:text-white/50 focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-60"
             />
             {sending && onCancelSend ? (
@@ -395,7 +372,6 @@ export default function CenterPanel({
               <button
                 type="button"
                 onClick={handleSend}
-                disabled={isDemoMode}
                 aria-label="Send message"
                 title="Send message"
                 className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/20 bg-white/75 text-neutral-950 shadow-lg shadow-black/20 transition-all hover:bg-white/85 disabled:opacity-50"
