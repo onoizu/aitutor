@@ -386,7 +386,7 @@ async function cozeChatCompletionOnce(
         if (/4001|retrieve|chat cannot be found/i.test(msg) || /non-JSON/i.test(msg)) {
           console.warn("[coze] retrieve unavailable, falling back to message-list polling");
           retrieveAvailable = false;
-        } else if (msg === "Coze chat failed (status=failed)") {
+        } else if (msg.startsWith("Coze chat failed (status=failed)")) {
           throw e;
         } else {
           console.warn("[coze] retrieve error (poll %d):", pollCount, e);
