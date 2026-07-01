@@ -230,11 +230,23 @@ export async function POST(req: Request) {
   try {
     if (useStream) {
       const encoder = new TextEncoder();
+      let streamClosed = false;
+      let heartbeat: ReturnType<typeof setInterval> | undefined;
       const stream = new ReadableStream({
         async start(controller) {
           let rawText = "";
           let cozeConversationId = incomingConversationId ?? "";
+          const send = (payload: unknown) => {
+            if (!streamClosed) {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
+            }
+          };
+          heartbeat = setInterval(() => {
+            send({ t: "heartbeat" });
+          }, 8000);
+
           try {
+            send({ t: "heartbeat" });
             const result = await callTutorModel(
               messages,
               incomingConversationId,
@@ -243,14 +255,11 @@ export async function POST(req: Request) {
             );
             rawText = result.text;
             cozeConversationId = result.conversationId;
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ t: "chunk", c: rawText })}\n\n`),
-            );
           } catch (err) {
             console.error("[tutor] stream failed", err);
-            controller.enqueue(
-              encoder.encode(`data: ${JSON.stringify({ t: "error", e: String(err) })}\n\n`),
-            );
+            clearInterval(heartbeat);
+            send({ t: "error", e: String(err) });
+            streamClosed = true;
             controller.close();
             return;
           }
@@ -286,10 +295,16 @@ export async function POST(req: Request) {
             userMessage: userQueryForRetrieval || userMessage,
             pkg,
           });
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ t: "done", response: payload })}\n\n`),
-          );
+          clearInterval(heartbeat);
+          send({ t: "done", response: payload });
+          streamClosed = true;
           controller.close();
+        },
+        cancel() {
+          // The request was closed by the browser or platform while Coze was still running.
+          // The async work cannot be aborted here, but this prevents further enqueue attempts.
+          streamClosed = true;
+          if (heartbeat) clearInterval(heartbeat);
         },
       });
       return new Response(stream, {

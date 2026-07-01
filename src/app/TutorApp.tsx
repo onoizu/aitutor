@@ -74,7 +74,7 @@ function deriveQuizSession(r: TutorResponse): QuizSession | null {
 }
 
 const QUIZ_TRIGGER =
-  /\b(quiz|测验|测试|出题|做题|小测|练习|来道题|考考我|quick\s*check)\b/i;
+  /\b(q?uiz|测验|测试|出题|做题|小测|练习|来道题|考考我|quick\s*check)\b/i;
 
 interface SessionData {
   id: string;
