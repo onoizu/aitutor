@@ -123,6 +123,17 @@ function temporaryQuizPackage(query: string, err: unknown): ReturnType<typeof no
   };
 }
 
+function ensureGradableQuizPackage(
+  pkg: ReturnType<typeof normalizeCozeAgentPackage>,
+  query: string,
+): ReturnType<typeof normalizeCozeAgentPackage> {
+  if (!isQuizRequest(query)) return pkg;
+  if (pkg.quiz?.question && pkg.quiz.options.length >= 2 && pkg.quiz.correctAnswer.trim()) {
+    return { ...pkg, mode: "quiz", learningState: pkg.learningState || "ready_for_quiz" };
+  }
+  return temporaryQuizPackage(query, "The tutor response did not include a gradable correctAnswer.");
+}
+
 function jsonResult(
   pkg: ReturnType<typeof normalizeCozeAgentPackage>,
   conversationId: string,
@@ -398,7 +409,10 @@ export async function POST(req: Request) {
           addMessage(runtimeId, "assistant", rawText.slice(0, 400));
 
           console.log("[tutor] coze raw (first 1200):", rawText.slice(0, 1200));
-          const pkg = normalizeCozeAgentPackage(rawText);
+          const pkg = ensureGradableQuizPackage(
+            normalizeCozeAgentPackage(rawText),
+            userQueryForRetrieval || userMessage,
+          );
           const mr = pkg.mainResponse;
           console.log(
             "[tutor] parsed pkg mode=%s summary_len=%d def_len=%d int_len=%d ex_len=%d cm_len=%d quiz=%s weak=%s next=%s resources=%d",
@@ -458,7 +472,10 @@ export async function POST(req: Request) {
     addMessage(runtimeId, "assistant", rawText.slice(0, 400));
 
     console.log("[tutor] coze raw (first 1200):", rawText.slice(0, 1200));
-    const pkg = normalizeCozeAgentPackage(rawText);
+    const pkg = ensureGradableQuizPackage(
+      normalizeCozeAgentPackage(rawText),
+      userQueryForRetrieval || userMessage,
+    );
     const mr2 = pkg.mainResponse;
     console.log(
       "[tutor] parsed pkg mode=%s summary_len=%d def_len=%d int_len=%d ex_len=%d cm_len=%d quiz=%s weak=%s next=%s resources=%d",

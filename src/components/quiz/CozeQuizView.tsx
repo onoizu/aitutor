@@ -36,7 +36,7 @@ function isCorrectChoice(
   const ca = quiz.correctAnswer.trim();
   const sel = options.find((o) => o.id === selectedId);
   if (!sel) return false;
-  if (!ca) return true;
+  if (!ca) return false;
   if (/^[a-z]$/i.test(ca)) {
     const idx = ca.toLowerCase().charCodeAt(0) - 97;
     return options[idx]?.id === selectedId;
@@ -68,6 +68,7 @@ export default function CozeQuizView({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   /** pick | repair | done */
   const [phase, setPhase] = useState<"pick" | "repair" | "done">("pick");
+  const [canRetry, setCanRetry] = useState(false);
   const [wrongLabel, setWrongLabel] = useState("");
   const [loadingFollowup, setLoadingFollowup] = useState(false);
 
@@ -103,9 +104,12 @@ export default function CozeQuizView({
     if (phase === "pick") {
       setWrongLabel(selText);
       setPhase("repair");
+      setCanRetry(false);
       setSelectedId(null);
       return;
     }
+    setWrongLabel(selText);
+    setCanRetry(false);
     setSelectedId(null);
   };
 
@@ -168,7 +172,7 @@ export default function CozeQuizView({
               <button
                 key={opt.id}
                 type="button"
-                disabled={phase === "done" || loadingFollowup}
+                disabled={phase === "done" || loadingFollowup || (phase === "repair" && !canRetry)}
                 onClick={() => setSelectedId(opt.id)}
                 className={`flex w-full items-start justify-between gap-2 rounded-xl border px-3 py-2.5 text-left text-sm transition-all disabled:cursor-default ${
                   phase === "done" && isCorrectChoice(opt.id, quiz, options)
@@ -200,6 +204,18 @@ export default function CozeQuizView({
               <p className="text-sm text-amber-50">Review the question and options carefully, then try again.</p>
             )}
             <p className="mt-1 text-xs text-white/70">Your previous choice: {wrongLabel || "—"}</p>
+            {!canRetry && (
+              <button
+                type="button"
+                onClick={() => {
+                  setCanRetry(true);
+                  setSelectedId(null);
+                }}
+                className="mt-2 rounded-xl border border-amber-200/40 bg-amber-100/10 px-3 py-2 text-sm font-semibold text-amber-50 hover:bg-amber-100/15"
+              >
+                Choose again
+              </button>
+            )}
           </div>
         )}
 
@@ -230,7 +246,7 @@ export default function CozeQuizView({
           <div className="mt-4 flex flex-wrap gap-2">
             <button
               type="button"
-              disabled={!selectedId || loadingFollowup}
+              disabled={!selectedId || loadingFollowup || (phase === "repair" && !canRetry)}
               onClick={handleSubmit}
               className="btn-primary rounded-xl px-4 py-2 text-sm font-semibold disabled:opacity-45"
             >
