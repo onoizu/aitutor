@@ -35,7 +35,8 @@ function isCorrectChoice(
 ): boolean {
   const ca = quiz.correctAnswer.trim();
   const sel = options.find((o) => o.id === selectedId);
-  if (!sel || !ca) return false;
+  if (!sel) return false;
+  if (!ca) return true;
   if (/^[a-z]$/i.test(ca)) {
     const idx = ca.toLowerCase().charCodeAt(0) - 97;
     return options[idx]?.id === selectedId;

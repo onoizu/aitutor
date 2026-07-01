@@ -61,6 +61,39 @@ function parseQuiz(json: Record<string, unknown>): CozeQuizPayload | null {
   };
 }
 
+function cleanMarkdownText(value: string): string {
+  return value
+    .replace(/\*\*/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function inferMarkdownQuiz(rawText: string): CozeQuizPayload | null {
+  const text = rawText.trim();
+  const questionMatch =
+    text.match(/(?:^|\n)\s*(?:#+\s*)?(?:\*\*)?Question(?:\*\*)?\s*[:：]\s*([\s\S]*?)(?=\n\s*(?:\*\*)?Options|\n\s*[-*]?\s*[A-Da-d][).:-]\s|\n\s*---|$)/i);
+  const optionMatches = Array.from(text.matchAll(/^\s*[-*]?\s*([A-Da-d])[).:-]\s*(.+)$/gm));
+
+  const question = cleanMarkdownText(questionMatch?.[1] ?? "");
+  const options = optionMatches
+    .map((match) => `${match[1].toUpperCase()}) ${cleanMarkdownText(match[2] ?? "")}`)
+    .filter((option) => option.length > 3);
+
+  if (!question || options.length < 2) return null;
+
+  const correctMatch = text.match(/(?:correct\s*answer|answer)\s*[:：]\s*(?:\*\*)?\s*([A-Da-d])(?:[).:-]\s*)?([^\n*]*)/i);
+  const hintMatch = text.match(/(?:\*\*)?Hint(?:\*\*)?\s*[:：]\s*([\s\S]*?)(?=\n\s*---|\n\s*#+|\n\s*(?:\*\*)?(?:Explanation|Resources|Correct\s*Answer)|$)/i);
+  const explanationMatch = text.match(/(?:\*\*)?Explanation(?:\*\*)?\s*[:：]\s*([\s\S]*?)(?=\n\s*---|\n\s*#+|\n\s*(?:\*\*)?(?:Hint|Resources)|$)/i);
+
+  return {
+    question,
+    options,
+    correctAnswer: correctMatch?.[1]?.toUpperCase() ?? "",
+    explanation: cleanMarkdownText(explanationMatch?.[1] ?? ""),
+    hint: cleanMarkdownText(hintMatch?.[1] ?? ""),
+  };
+}
+
 function parseResources(raw: unknown): CozeResourceItem[] {
   if (!Array.isArray(raw)) return [];
   const out: CozeResourceItem[] = [];
@@ -142,6 +175,18 @@ export function normalizeCozeAgentPackage(rawText: string): CozeAgentPackage {
   const parsed = extractFirstJsonObject(rawText);
   const json = asRecord(parsed);
   if (!json) {
+    const inferredQuiz = inferMarkdownQuiz(rawText);
+    if (inferredQuiz) {
+      return {
+        ...EMPTY_COZE_PACKAGE,
+        mode: "quiz",
+        learningState: "ready_for_quiz",
+        mainResponse: { summary: rawText.trim().slice(0, 8000) },
+        quiz: inferredQuiz,
+        nextRecommendation: "Review the explanation after answering, then try one more practice question.",
+      };
+    }
+
     return {
       ...EMPTY_COZE_PACKAGE,
       mainResponse: { summary: rawText.trim().slice(0, 8000) },

@@ -1,7 +1,10 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-const DATA_DIR = path.join(process.cwd(), ".data");
+const DATA_DIR =
+  process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME
+    ? path.join("/tmp", "adaptive-ai-tutor-data")
+    : path.join(process.cwd(), ".data");
 
 export function dataFilePath(fileName: string): string {
   return path.join(DATA_DIR, fileName);
