@@ -70,11 +70,30 @@ function cleanMarkdownText(value: string): string {
 
 function inferMarkdownQuiz(rawText: string): CozeQuizPayload | null {
   const text = rawText.trim();
-  const questionMatch =
-    text.match(/(?:^|\n)\s*(?:#+\s*)?(?:\*\*)?Question(?:\*\*)?\s*[:：]\s*([\s\S]*?)(?=\n\s*(?:\*\*)?Options|\n\s*[-*]?\s*[A-Da-d][).:-]\s|\n\s*---|$)/i);
+  const lines = text.split(/\n+/).map((line) => line.trim()).filter(Boolean);
   const optionMatches = Array.from(text.matchAll(/^\s*[-*]?\s*([A-Da-d])[).:-]\s*(.+)$/gm));
 
-  const question = cleanMarkdownText(questionMatch?.[1] ?? "");
+  const firstOptionLine = lines.findIndex((line) => /^[-*]?\s*[A-Da-d][).:-]\s+/.test(line));
+  const questionFromLines =
+    firstOptionLine > 0
+      ? [...lines.slice(0, firstOptionLine)]
+          .reverse()
+          .find((line) => {
+            const clean = cleanMarkdownText(line).toLowerCase();
+            return (
+              clean &&
+              !/^[-*_]{3,}$/.test(clean) &&
+              !/^#+/.test(line) &&
+              !/^(quiz\s*)?question:?$/.test(clean) &&
+              !/^options:?$/.test(clean) &&
+              !/^here is\b/.test(clean)
+            );
+          })
+      : "";
+  const questionMatch =
+    text.match(/(?:^|\n)\s*(?:#+\s*)?(?:\*\*)?(?:Quiz\s*)?Question(?:\*\*)?\s*[:：]\s*([\s\S]*?)(?=\n\s*(?:\*\*)?Options|\n\s*[-*]?\s*[A-Da-d][).:-]\s|\n\s*---|$)/i);
+
+  const question = cleanMarkdownText(questionFromLines || questionMatch?.[1] || "");
   const options = optionMatches
     .map((match) => `${match[1].toUpperCase()}) ${cleanMarkdownText(match[2] ?? "")}`)
     .filter((option) => option.length > 3);
