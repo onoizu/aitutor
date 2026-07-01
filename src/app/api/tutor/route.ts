@@ -92,28 +92,60 @@ async function buildPersistentContext(input: {
   return parts.join("\n\n");
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function customModelConfigured() {
+  return Boolean(process.env.CUSTOM_API_URL && process.env.CUSTOM_API_KEY);
+}
+
+function isRetryableCozeError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /status=failed|server issues|try your request again|temporar|timeout|empty assistant/i.test(msg);
+}
+
 async function callTutorModel(
   messages: ChatMessage[],
   conversationId: string | undefined,
   imageFile: File | null,
   clientSessionId: string | undefined,
 ): Promise<{ text: string; conversationId: string; provider: "coze" | "custom" }> {
+  let lastCozeErr: unknown;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const result = await cozeChatCompletion(
+        messages,
+        attempt === 1 ? conversationId : undefined,
+        imageFile,
+        clientSessionId,
+      );
+      return { ...result, provider: "coze" };
+    } catch (cozeErr) {
+      lastCozeErr = cozeErr;
+      console.error("[tutor/route] Coze API request failed attempt %d/3", attempt, cozeErr);
+      if (attempt < 3 && isRetryableCozeError(cozeErr)) {
+        await sleep(1200 * attempt);
+        continue;
+      }
+      break;
+    }
+  }
+
+  if (!customModelConfigured()) {
+    throw lastCozeErr instanceof Error ? lastCozeErr : new Error(String(lastCozeErr));
+  }
+
   try {
-    const result = await cozeChatCompletion(
-      messages,
-      conversationId,
-      imageFile,
-      clientSessionId,
-    );
-    return { ...result, provider: "coze" };
-  } catch (cozeErr) {
-    console.error("Coze API request failed; trying custom model fallback", cozeErr);
     const text = await chatCompletion(messages);
     return {
       text,
       conversationId: conversationId || clientSessionId || getOrCreateSession().conversationId,
       provider: "custom",
     };
+  } catch (customErr) {
+    console.error("[tutor/route] Custom model fallback failed", customErr);
+    throw lastCozeErr instanceof Error ? lastCozeErr : customErr;
   }
 }
 

@@ -367,7 +367,17 @@ async function cozeChatCompletionOnce(
         const status = extractStatus(retrieveRes);
         console.log("[coze] poll %d — retrieve status=%s", pollCount, status);
         if (status === "failed") {
-          throw new Error("Coze chat failed (status=failed)");
+          let failedDetail = "";
+          try {
+            const messageRes = await fetchChatMessageListPayload(
+              cozeConversationId,
+              chatId,
+            );
+            failedDetail = JSON.stringify(messageRes).slice(0, 500);
+          } catch (messageErr) {
+            failedDetail = messageErr instanceof Error ? messageErr.message : String(messageErr);
+          }
+          throw new Error(`Coze chat failed (status=failed): ${failedDetail}`);
         }
         chatCompleted = status === "completed";
         if (!chatCompleted) continue;
