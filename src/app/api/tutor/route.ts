@@ -191,7 +191,8 @@ async function callTutorModel(
   clientSessionId: string | undefined,
 ): Promise<{ text: string; conversationId: string; provider: "coze" | "custom" }> {
   let lastCozeErr: unknown;
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
+  const maxAttempts = process.env.NETLIFY ? 1 : 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     try {
       const result = await cozeChatCompletion(
         messages,
@@ -202,8 +203,8 @@ async function callTutorModel(
       return { ...result, provider: "coze" };
     } catch (cozeErr) {
       lastCozeErr = cozeErr;
-      console.error("[tutor/route] Coze API request failed attempt %d/3", attempt, cozeErr);
-      if (attempt < 3 && isRetryableCozeError(cozeErr)) {
+      console.error("[tutor/route] Coze API request failed attempt %d/%d", attempt, maxAttempts, cozeErr);
+      if (attempt < maxAttempts && isRetryableCozeError(cozeErr)) {
         await sleep(1200 * attempt);
         continue;
       }

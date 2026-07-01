@@ -342,7 +342,7 @@ async function cozeChatCompletionOnce(
     extractStatus(chatRes),
   );
 
-  const MAX_POLLS = 60;
+  const MAX_POLLS = process.env.NETLIFY ? 10 : 60;
   const POLL_INTERVAL = 1500;
   let pollCount = 0;
   let msgs: JsonRecord[] = [];
