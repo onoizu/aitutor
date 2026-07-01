@@ -93,7 +93,7 @@ export async function sendMessage(
         signal: options?.signal,
       });
     } else {
-      const useStream = !options?.correctAfterRepair;
+      const useStream = false;
       const url = `/api/tutor${useStream ? "?stream=1" : ""}`;
       res = await fetch(url, {
         method: "POST",
