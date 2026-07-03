@@ -5,6 +5,11 @@
 
 const MAX_TEXT_LENGTH = 30_000;
 
+export interface DocumentExtractionResult {
+  text?: string;
+  reason?: string;
+}
+
 function truncate(text: string): string {
   return text.length > MAX_TEXT_LENGTH
     ? text.slice(0, MAX_TEXT_LENGTH) + "\n\n[... document too long, truncated ...]"
@@ -17,6 +22,10 @@ function truncate(text: string): string {
  * @returns Extracted text, or undefined on failure
  */
 export async function extractTextFromFile(file: File): Promise<string | undefined> {
+  return (await extractTextFromFileDetailed(file)).text;
+}
+
+export async function extractTextFromFileDetailed(file: File): Promise<DocumentExtractionResult> {
   const ext = (file.name.split(".").pop() ?? "").toLowerCase();
   console.log("[documentParser] parsing file: name=%s ext=%s size=%d", file.name, ext, file.size);
 
@@ -25,7 +34,7 @@ export async function extractTextFromFile(file: File): Promise<string | undefine
     buffer = Buffer.from(await file.arrayBuffer());
   } catch (err) {
     console.error("[documentParser] failed to read file buffer:", file.name, err);
-    return undefined;
+    return { reason: "The uploaded file could not be read by the server." };
   }
 
   try {
@@ -40,14 +49,36 @@ export async function extractTextFromFile(file: File): Promise<string | undefine
       text = truncate(buffer.toString("utf-8"));
     } else {
       console.warn("[documentParser] unsupported file type:", ext, file.name);
-      return undefined;
+      return { reason: `Unsupported file type: .${ext || "unknown"}.` };
     }
     console.log("[documentParser] extraction result: ext=%s textLength=%d", ext, text?.length ?? 0);
-    return text;
+    if (!text?.trim()) {
+      return {
+        reason:
+          ext === "pdf"
+            ? "No selectable text was found. This is likely a scanned or image-only PDF."
+            : "No readable text was found in the document.",
+      };
+    }
+    return { text };
   } catch (err) {
     console.error("[documentParser] extract FAILED for:", file.name, "ext:", ext, "error:", err);
-    return undefined;
+    return { reason: describeExtractionError(err, ext) };
   }
+}
+
+function describeExtractionError(err: unknown, ext: string): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (/password|encrypted/i.test(msg)) {
+    return "The document appears to be password-protected or encrypted.";
+  }
+  if (/invalid|corrupt|format/i.test(msg)) {
+    return "The document appears to be corrupted or not a valid file.";
+  }
+  if (ext === "pdf") {
+    return "PDF text extraction failed. The file may be scanned, image-only, encrypted, or malformed.";
+  }
+  return "Document text extraction failed.";
 }
 
 async function extractTextFromPdf(buffer: Buffer): Promise<string | undefined> {

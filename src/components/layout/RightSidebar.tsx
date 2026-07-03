@@ -32,9 +32,30 @@ function resourcesFromCoze(pkg: CozeAgentPackage): ResourceItem[] {
   });
 }
 
+export interface ResourceHistoryEntry {
+  id: string;
+  title: string;
+  resources: ResourceItem[];
+}
+
+function resourceKey(resource: ResourceItem) {
+  return `${resource.title.trim().toLowerCase()}|${resource.url ?? ""}`;
+}
+
+function uniqueResources(resources: ResourceItem[]): ResourceItem[] {
+  const seen = new Set<string>();
+  return resources.filter((resource) => {
+    const key = resourceKey(resource);
+    if (!resource.title.trim() || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 interface RightSidebarProps {
   response: TutorResponse;
   cozePackage?: CozeAgentPackage | null;
+  resourceHistory?: ResourceHistoryEntry[];
   notebookEntries?: NotebookEntry[];
   onUpdateNotebookEntry?: (id: string, content: string, title?: string) => void;
   onRemoveNotebookEntry?: (id: string) => void;
@@ -56,6 +77,7 @@ const studioHelpText: Record<StudioItem, string> = {
 export default function RightSidebar({
   response,
   cozePackage,
+  resourceHistory = [],
   notebookEntries = [],
   onUpdateNotebookEntry,
   onRemoveNotebookEntry,
@@ -75,10 +97,19 @@ export default function RightSidebar({
         }
       : (response.nextRecommendation ?? summary?.recommendation ?? null);
   const cozeSummaryText = cozePackage?.sessionSummary?.trim() ?? "";
-  const resourceList: ResourceItem[] =
+  const currentResourceList: ResourceItem[] =
     cozePackage && cozePackage.resources.length > 0
       ? resourcesFromCoze(cozePackage)
       : (response.recommendedResources ?? []);
+  const resourceHistoryEntries =
+    resourceHistory.length > 0
+      ? resourceHistory
+      : currentResourceList.length > 0
+        ? [{ id: "current", title: "Current recommendation", resources: currentResourceList }]
+        : [];
+  const allResources = uniqueResources(resourceHistoryEntries.flatMap((entry) => entry.resources));
+  const latestResourceEntry = resourceHistoryEntries.at(-1);
+  const latestResources = latestResourceEntry?.resources ?? [];
 
   const [openDrawer, setOpenDrawer] = useState<Exclude<StudioItem, "weak" | "next" | "notebook"> | null>(null);
 
@@ -212,32 +243,62 @@ export default function RightSidebar({
           <div className="text-[11px] font-semibold uppercase tracking-wide text-white/90">
             Recommended resources
           </div>
-          {resourceList.length > 0 ? (
-            <ul className="mt-2 space-y-1.5">
-              {resourceList.slice(0, 3).map((r, i) => (
-                <li key={`${r.title}-${i}`} className="text-sm">
-                  {r.url ? (
-                    <a href={r.url} target="_blank" rel="noopener noreferrer" className="text-cyan-200 underline decoration-white/20 hover:decoration-cyan-200/60">
-                      {r.title}
-                    </a>
-                  ) : (
-                    <span className="text-white/90">{r.title}</span>
-                  )}
-                  {r.source && <span className="ml-1 text-xs text-white/50">({r.source})</span>}
-                </li>
-              ))}
-            </ul>
+          {allResources.length > 0 ? (
+            <div className="mt-2 space-y-2">
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-cyan-200/15 bg-black/20 px-2.5 py-2">
+                <div>
+                  <div className="text-sm font-semibold text-white">{allResources.length} saved</div>
+                  <div className="text-[11px] text-cyan-100/70">
+                    {resourceHistoryEntries.length} recommendation {resourceHistoryEntries.length === 1 ? "turn" : "turns"}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setOpenDrawer("resources")}
+                  className="rounded-full border border-cyan-200/25 bg-cyan-200/10 px-3 py-1 text-[11px] font-semibold text-cyan-50 hover:bg-cyan-200/15"
+                >
+                  History
+                </button>
+              </div>
+
+              {latestResourceEntry && (
+                <div className="rounded-lg border border-white/10 bg-white/[0.04] px-2.5 py-2">
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-cyan-100/80">
+                      Latest
+                    </span>
+                    <span className="max-w-[150px] truncate text-[11px] text-white/45">
+                      {latestResourceEntry.title}
+                    </span>
+                  </div>
+                  <ul className="space-y-1.5">
+                    {latestResources.slice(0, 2).map((resource) => (
+                      <li key={resourceKey(resource)}>
+                        {resource.url ? (
+                          <a
+                            href={resource.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="block truncate text-sm font-medium text-cyan-100 underline decoration-white/15 hover:decoration-cyan-100/70"
+                          >
+                            {resource.title}
+                          </a>
+                        ) : (
+                          <span className="block truncate text-sm font-medium text-white/90">{resource.title}</span>
+                        )}
+                        {(resource.source || resource.reason) && (
+                          <p className="mt-0.5 line-clamp-1 text-[11px] text-white/55">
+                            {resource.source || resource.reason}
+                          </p>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
           ) : (
             <p className="mt-2 text-xs text-white/80">Resources will appear when the tutor identifies useful materials.</p>
-          )}
-          {resourceList.length > 3 && (
-            <button
-              type="button"
-              onClick={() => setOpenDrawer("resources")}
-              className="mt-2 w-full rounded-lg border border-white/15 bg-white/5 px-2 py-1.5 text-left text-xs text-white/70 hover:bg-white/10"
-            >
-              View all {resourceList.length} resources
-            </button>
           )}
         </section>
       </section>
@@ -298,8 +359,34 @@ export default function RightSidebar({
 
             {openDrawer === "resources" && (
               <>
-                {resourceList.length > 0 ? (
-                  <RecommendedResourcesPanel resources={resourceList} />
+                {allResources.length > 0 ? (
+                  <div className="space-y-4">
+                    <div className="space-y-3">
+                      {resourceHistoryEntries.map((entry, entryIndex) => (
+                        <section
+                          key={entry.id}
+                          className="relative rounded-xl border border-white/10 bg-white/[0.04] p-3 ring-1 ring-white/5"
+                        >
+                          <div className="mb-2 flex items-center gap-2">
+                            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-cyan-200/25 bg-cyan-200/10 text-[11px] font-semibold text-cyan-100">
+                              {entryIndex + 1}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="truncate text-sm font-semibold text-white">{entry.title}</div>
+                              <div className="text-[11px] text-white/45">
+                                {entry.resources.length} resource{entry.resources.length === 1 ? "" : "s"}
+                              </div>
+                            </div>
+                          </div>
+                          <RecommendedResourcesPanel resources={entry.resources} title="Recommended in this turn" />
+                        </section>
+                      ))}
+                    </div>
+
+                    {allResources.length > 1 && (
+                      <RecommendedResourcesPanel resources={allResources} title="All saved resources" />
+                    )}
+                  </div>
                 ) : (
                   <section className="rounded-lg border border-white/10 bg-white/5 p-3">
                     <p className="text-sm text-white/75">

@@ -15,6 +15,7 @@ import {
 import { mergeStickyCozeFields } from "@/lib/mergeStickyCozePackage";
 import { EMPTY_COZE_PACKAGE } from "@/lib/normalizeAgentPackage";
 import { generateSessionSummaryNote } from "@/lib/notebookUtils";
+import type { UploadedAttachment, UploadedAttachmentKind } from "@/lib/uploadConstraints";
 import type { NotebookEntry } from "@/types/notebook";
 import type { CozeAgentPackage } from "@/types/agentPackage";
 import type { QuizSession, RepairResult, TutorResponse } from "@/types/tutor";
@@ -65,6 +66,16 @@ function uid() {
   return `id_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function attachmentFromFile(file: File, kind: UploadedAttachmentKind): UploadedAttachment {
+  return {
+    id: uid(),
+    kind,
+    name: file.name,
+    type: file.type,
+    size: file.size,
+  };
+}
+
 function deriveQuizSession(r: TutorResponse): QuizSession | null {
   if (r.quizSession?.questions?.length) return r.quizSession;
   if (r.mode === "quiz" && r.content.contentType === "quiz") {
@@ -105,19 +116,6 @@ function newSession(): SessionData {
   };
 }
 
-function displayModeForSession(session: SessionData): "teach" | "quiz" {
-  const hasCozeQuiz = Boolean(
-    session.cozePackage?.quiz?.question &&
-      session.cozePackage.quiz.options?.length &&
-      !session.cozeQuizDismissed,
-  );
-  const hasLegacyQuiz = Boolean(
-    !session.quizCleared &&
-      session.quizSession?.questions?.length,
-  );
-  return hasCozeQuiz || hasLegacyQuiz ? "quiz" : "teach";
-}
-
 const LEARNING_PROMPTS: Record<LearningActionType, string> = {
   concept_overview:
     "Give me a concept overview of the current topic. " +
@@ -127,10 +125,12 @@ const LEARNING_PROMPTS: Record<LearningActionType, string> = {
     "Put the worked example in mainResponse (summary, definition for setup, example for the walkthrough). Set mode to \"teach\".",
   quiz_check:
     "Generate one multiple-choice quiz question about the current topic. " +
-    "Fill in the quiz field (question, options, correctAnswer, explanation, hint). Set mode to \"quiz\".",
+    "Return only the quiz field with question, 4 options, correctAnswer, explanation, and hint. " +
+    "Set mode to \"quiz\". Do not generate resources, sessionSummary, or noteEntry.",
   answer_repair:
     "I think I have a misconception about what we just discussed. " +
-    "Identify my likely weak point and explain it clearly. Fill weakTopic, and put the corrective explanation in mainResponse. Set mode to \"teach\".",
+    "Give only a concise hint and the likely weakTopic. Set mode to \"repair\". " +
+    "Do not generate resources, sessionSummary, or noteEntry.",
   feynman_reflection:
     "[Workflow: Feynman Reflection / Reverse Teaching]\n" +
     "Start a Feynman reflection for the current topic. Ask me to explain the concept in my own words first. " +
@@ -142,7 +142,7 @@ const LEARNING_PROMPTS: Record<LearningActionType, string> = {
     "Do NOT use markdown code fences. Set mode to \"mindmap\".",
   session_review:
     "Generate a summary note for this session. " +
-    "Fill sessionSummary with covered topics, weakTopic with any weak points, and nextRecommendation with what to study next. Set mode to \"review\".",
+    "Fill sessionSummary, weakTopic, nextRecommendation, and resources. Set mode to \"review\".",
   study_plan_checkin:
     "[Workflow: Study Plan Check-in]\n" +
     "Use the persistent learner memory and retrieved course context if provided. Review my open study plan, weak-topic profile, and recent session progress. " +
@@ -206,8 +206,7 @@ export default function TutorApp() {
       queueMicrotask(() => {
         setSessions(stored.sessions);
         setActiveSessionId(restoredActiveId);
-        const restoredActive = stored.sessions.find((s) => s.id === restoredActiveId);
-        if (restoredActive) setDisplayMode(displayModeForSession(restoredActive));
+        setDisplayMode("teach");
       });
     }
     storageLoadedRef.current = true;
@@ -257,15 +256,21 @@ export default function TutorApp() {
           `]\n\n`;
         messageToSend =
           `${context}${rawDisplay}\n\n` +
-          `This is a quiz request. Return a quiz question card by setting mode to "quiz" and filling the quiz field. ` +
-          `The quiz field must include: question, options, correctAnswer, explanation, and hint. ` +
-          `Also update weakTopic, nextRecommendation, sessionSummary, resources, learningState, and noteEntry when relevant.`;
+          `This is a quiz request. Return only one lightweight quiz card by setting mode to "quiz" and filling the quiz field. ` +
+          `The quiz field must include: question, exactly 4 options, correctAnswer, explanation, and hint. ` +
+          `Do not generate resources, sessionSummary, noteEntry, or a long teaching explanation.`;
       }
+
+      const attachments = [
+        image ? attachmentFromFile(image, "image") : null,
+        document ? attachmentFromFile(document, "document") : null,
+      ].filter((item): item is UploadedAttachment => Boolean(item));
 
       const userTurn: LiveTurn = {
         id: uid(),
         role: "user",
         text: display,
+        attachments,
       };
       const isFirstUserMessage = !session.liveTurns.some((t) => t.role === "user");
 
@@ -529,7 +534,7 @@ export default function TutorApp() {
       setActiveSessionId((current) => {
         if (current !== sessionId) return current;
         const next = remaining[0]!;
-        setDisplayMode(displayModeForSession(next));
+        setDisplayMode("teach");
         return next.id;
       });
       return remaining;
@@ -537,12 +542,9 @@ export default function TutorApp() {
   }, []);
 
   const onSwitchSession = useCallback((sessionId: string) => {
-    const target = sessions.find((s) => s.id === sessionId);
-    if (target) {
-      setDisplayMode(displayModeForSession(target));
-    }
+    setDisplayMode("teach");
     setActiveSessionId(sessionId);
-  }, [sessions]);
+  }, []);
 
   const onRequestRepair = useCallback(
     async (wrongAnswer: string, question: string): Promise<RepairResult | null> => {
@@ -551,7 +553,7 @@ export default function TutorApp() {
       if (!session) return null;
 
       const msg =
-        `Hint: I answered a quiz question incorrectly.\n\nQuestion: ${question}\nMy answer: ${wrongAnswer}\n\nPlease give feedback, a detailed hint, and a next step. Do not reveal only the correct option letter; help me reason it out. Respond as JSON in repair mode when possible.`;
+        `Repair mode: I answered a quiz question incorrectly.\n\nQuestion: ${question}\nMy answer: ${wrongAnswer}\n\nGive only a concise hint and the likely weakTopic. Do not reveal the correct option letter. Do not generate resources, sessionSummary, or noteEntry. Respond as JSON in repair mode when possible.`;
 
       try {
         const result = await sendMessage(msg, {

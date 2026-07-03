@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { TutorResponse, QuizSession, RepairResult } from "@/types/tutor";
 import type { NotebookEntry } from "@/types/notebook";
@@ -10,6 +10,12 @@ import LiveChat from "@/components/LiveChat";
 import AgentStatusBar from "@/components/layout/AgentStatusBar";
 import QuizPaginationView from "@/components/quiz/QuizPaginationView";
 import CozeQuizView from "@/components/quiz/CozeQuizView";
+import {
+  DOCUMENT_ACCEPT,
+  IMAGE_ACCEPT,
+  formatFileSize,
+  validateUploadFile,
+} from "@/lib/uploadConstraints";
 
 interface CenterPanelProps {
   response: TutorResponse;
@@ -42,29 +48,6 @@ interface CenterPanelProps {
   }) => Promise<void>;
 }
 
-const QUICK_CARDS = [
-  {
-    label: "Examples",
-    prompt: "Give me step-by-step examples for the current topic.",
-  },
-  {
-    label: "Quiz",
-    prompt: "Generate one multiple-choice quiz question for the current topic.",
-  },
-  {
-    label: "Mindmap",
-    prompt: "Create a mind map for the current topic.",
-  },
-  {
-    label: "Feynman",
-    prompt: "Start a Feynman reflection. Ask me to explain the current topic in my own words, then evaluate my answer.",
-  },
-  {
-    label: "Review",
-    prompt: "Summarize this session and suggest the next study step.",
-  },
-] as const;
-
 export default function CenterPanel({
   response,
   currentTopic,
@@ -85,13 +68,6 @@ export default function CenterPanel({
   onCozeQuizExit,
   onCozeCorrectAfterRepair,
 }: CenterPanelProps) {
-  const nextRec =
-    cozePackage?.nextRecommendation?.trim()
-      ? {
-          title: cozePackage.nextRecommendation.trim(),
-          detail: undefined as string | undefined,
-        }
-      : (response.nextRecommendation ?? response.sessionSummary?.recommendation ?? null);
   const [repairModeInQuiz, setRepairModeInQuiz] = useState(false);
   const [cozeRepairMode, setCozeRepairMode] = useState(false);
 
@@ -101,9 +77,42 @@ export default function CenterPanel({
   const [sending, setSending] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [documentFile, setDocumentFile] = useState<File | null>(null);
+  const [uploadError, setUploadError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const docInputRef = useRef<HTMLInputElement>(null);
+  const imagePreviewUrl = useMemo(
+    () => (imageFile ? URL.createObjectURL(imageFile) : ""),
+    [imageFile],
+  );
+
+  useEffect(() => {
+    return () => {
+      if (imagePreviewUrl) URL.revokeObjectURL(imagePreviewUrl);
+    };
+  }, [imagePreviewUrl]);
+
+  const selectImage = (file?: File) => {
+    if (!file) return;
+    const error = validateUploadFile(file, "image");
+    if (error) {
+      setUploadError(error);
+      return;
+    }
+    setUploadError("");
+    setImageFile(file);
+  };
+
+  const selectDocument = (file?: File) => {
+    if (!file) return;
+    const error = validateUploadFile(file, "document");
+    if (error) {
+      setUploadError(error);
+      return;
+    }
+    setUploadError("");
+    setDocumentFile(file);
+  };
 
   const handleSend = async () => {
     const text = inputValue.trim();
@@ -115,6 +124,7 @@ export default function CenterPanel({
     setInputValue("");
     setImageFile(null);
     setDocumentFile(null);
+    setUploadError("");
     try {
       await onSendMessage(
         text || (img ? "Analyze this image" : doc ? "Answer based on this document" : ""),
@@ -127,23 +137,18 @@ export default function CenterPanel({
     }
   };
 
-  const applyQuickCard = (prompt: string) => {
-    setInputValue(prompt);
-    requestAnimationFrame(() => inputRef.current?.focus());
-  };
-
   return (
-    <main className="order-1 flex flex-col overflow-hidden rounded-2xl border border-white/15 bg-neutral-800/80 text-[15px] leading-relaxed shadow-[0_14px_48px_rgba(0,0,0,0.45)] md:text-base lg:order-2">
-      <header className="shrink-0 border-b border-white/10 px-4 py-4 md:px-6">
-        <div className="mb-3 rounded-xl border border-white/15 bg-gradient-to-b from-white/[0.06] to-white/[0.02] px-3 py-3.5">
-          <p className="text-xs font-semibold uppercase tracking-wide text-white/70">
+    <main className="order-1 flex flex-col overflow-hidden rounded-2xl border border-white/15 bg-neutral-800/80 text-sm leading-relaxed shadow-[0_14px_48px_rgba(0,0,0,0.45)] lg:order-2">
+      <header className="shrink-0 border-b border-white/10 px-4 py-3 md:px-5">
+        <div className="mb-2 rounded-lg border border-white/12 bg-gradient-to-b from-white/[0.05] to-white/[0.02] px-3 py-2">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-white/60">
             Current Learning Topic
           </p>
-          <h2 className="mt-1 text-2xl font-semibold text-white md:text-[1.4rem]">
+          <h2 className="mt-0.5 truncate text-lg font-semibold text-white md:text-xl">
             {currentTopic || "Adaptive AI Tutor"}
           </h2>
           {currentGoal && (
-            <p className="mt-1 text-base text-white/75">
+            <p className="mt-0.5 text-xs text-white/70">
               Focus: {currentGoal}
             </p>
           )}
@@ -162,23 +167,14 @@ export default function CenterPanel({
                   ? "teach"
                   : response.mode
           }
-          className="mb-3"
+          className="mb-2"
         />
         <div className="flex flex-wrap items-center justify-between gap-2">
-          {!inCozeQuiz && !(quizSession && quizSession.questions.length > 0) && (
-            <p className="line-clamp-2 text-base text-white/90">
-              {(() => {
-                const raw = cozePackage?.mainResponse?.summary?.trim() || response.message;
-                const firstLine = raw.split(/\n/)[0] ?? raw;
-                return firstLine.length > 150 ? firstLine.slice(0, 150) + "…" : firstLine;
-              })()}
-            </p>
-          )}
           {inCozeQuiz && cozeRepairMode && (
-            <p className="text-base text-amber-200">Review the hint and select your answer again</p>
+            <p className="text-sm text-amber-200">Review the hint and select your answer again</p>
           )}
           {quizSession && quizSession.questions.length > 0 && repairModeInQuiz && (
-            <p className="text-base text-amber-200">Detailed hint provided — please select your answer again</p>
+            <p className="text-sm text-amber-200">Detailed hint provided — please select your answer again</p>
           )}
         </div>
       </header>
@@ -226,50 +222,28 @@ export default function CenterPanel({
           </div>
         ) : (
           <>
-            <div className="flex-1 space-y-5 overflow-y-auto px-4 py-4 md:px-6 md:py-6">
+            <div className="flex-1 space-y-4 overflow-y-auto px-4 py-3 md:px-5 md:py-4">
               <LiveChat turns={liveTurns} isGenerating={sending} onAddToNotes={onAddToNotes} onRequestHint={onRequestHint} />
               {children}
             </div>
-
-            {nextRec && (
-              <div className="shrink-0 px-4 pb-2 md:px-6">
-                <div className="rounded-xl border border-white/20 bg-white/10 px-3 py-2 text-sm text-white ring-1 ring-white/10">
-                  <span className="font-medium text-white">Next: </span>
-                  {nextRec.title}
-                </div>
-              </div>
-            )}
           </>
         )}
 
         {/* Hide input footer during quiz mode */}
         {!inCozeQuiz && !(quizSession && quizSession.questions.length > 0) && (
-        <footer className="shrink-0 border-t border-white/10 bg-neutral-900/35 px-4 py-3 md:px-6">
-          <div className="mb-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2">
-            <div className="flex gap-2 overflow-x-auto pb-0.5">
-              {QUICK_CARDS.map((card) => (
-                <button
-                  key={card.label}
-                  type="button"
-                  onClick={() => applyQuickCard(card.prompt)}
-                  disabled={sending}
-                  className="shrink-0 rounded-lg border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs font-medium text-white/85 transition-colors hover:border-cyan-200/35 hover:bg-cyan-300/10 hover:text-white disabled:opacity-45"
-                >
-                  {card.label}
-                </button>
-              ))}
-            </div>
-          </div>
+        <footer className="shrink-0 border-t border-white/10 bg-neutral-900/35 px-4 py-3 md:px-5">
           {(imageFile || documentFile) && (
             <div className="mb-2 flex flex-wrap items-center gap-2">
               {imageFile && (
                 <div className="flex items-center gap-2">
                   <img
-                    src={URL.createObjectURL(imageFile)}
+                    src={imagePreviewUrl}
                     alt="preview"
                     className="h-12 w-12 rounded-lg object-cover ring-1 ring-white/20"
                   />
-                  <span className="text-sm text-white">{imageFile.name}</span>
+                  <span className="max-w-[190px] truncate text-sm text-white">
+                    {imageFile.name} · {formatFileSize(imageFile.size)}
+                  </span>
                   <button
                     type="button"
                     onClick={() => setImageFile(null)}
@@ -284,7 +258,9 @@ export default function CenterPanel({
                   <svg className="h-5 w-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
-                  <span className="text-sm text-white">{documentFile.name}</span>
+                  <span className="max-w-[220px] truncate text-sm text-white">
+                    {documentFile.name} · {formatFileSize(documentFile.size)}
+                  </span>
                   <button
                     type="button"
                     onClick={() => setDocumentFile(null)}
@@ -300,22 +276,20 @@ export default function CenterPanel({
             <input
               ref={fileInputRef}
               type="file"
-              accept="image/*"
+              accept={IMAGE_ACCEPT}
               className="hidden"
               onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f?.type.startsWith("image/")) setImageFile(f);
+                selectImage(e.target.files?.[0]);
                 e.target.value = "";
               }}
             />
             <input
               ref={docInputRef}
               type="file"
-              accept=".pdf,.doc,.docx,.txt,.md"
+              accept={DOCUMENT_ACCEPT}
               className="hidden"
               onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) setDocumentFile(f);
+                selectDocument(e.target.files?.[0]);
                 e.target.value = "";
               }}
             />
@@ -358,13 +332,13 @@ export default function CenterPanel({
               placeholder={
                 "Type a message, upload an image or document, press Enter to send…"
               }
-              className="h-10 flex-1 rounded-xl border border-white/10 bg-neutral-900/80 px-3 text-base text-white placeholder:text-white/50 focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-60"
+              className="h-10 flex-1 rounded-xl border border-white/10 bg-neutral-900/80 px-3 text-sm text-white placeholder:text-white/50 focus:border-white/30 focus:outline-none focus:ring-2 focus:ring-white/20 disabled:opacity-60"
             />
             {sending && onCancelSend ? (
               <button
                 type="button"
                 onClick={onCancelSend}
-                className="inline-flex h-10 items-center justify-center rounded-xl border border-red-400/40 bg-red-500/15 px-4 text-base font-semibold text-red-300 transition-colors hover:bg-red-500/25 hover:text-red-200"
+                className="inline-flex h-10 items-center justify-center rounded-xl border border-red-400/40 bg-red-500/15 px-4 text-sm font-semibold text-red-300 transition-colors hover:bg-red-500/25 hover:text-red-200"
               >
                 Cancel
               </button>
@@ -382,6 +356,9 @@ export default function CenterPanel({
               </button>
             )}
           </div>
+          {uploadError && (
+            <p className="mt-2 text-xs text-red-200">{uploadError}</p>
+          )}
         </footer>
         )}
       </section>

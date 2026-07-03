@@ -30,6 +30,17 @@ const quickMenu = [
   { id: "session_review", label: "Session review", detail: "Generate summary note" },
 ] as const;
 
+function formatSessionTime(iso: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(new Date(iso));
+}
+
 function AITutorMark() {
   return (
     <div
@@ -128,7 +139,7 @@ export default function LeftSidebar({
                     className="w-full rounded-md border border-transparent bg-transparent px-1 py-0.5 font-medium text-white outline-none transition-colors hover:border-white/10 hover:bg-black/10 focus:border-cyan-200/40 focus:bg-black/20 focus:ring-1 focus:ring-cyan-200/20"
                   />
                   <div className="mt-0.5 text-[11px] text-white/60">
-                    {new Date(session.updatedAt).toLocaleString()}
+                    {formatSessionTime(session.updatedAt)}
                   </div>
                 </div>
                 {menuSessionId === session.id && onDeleteSession && (

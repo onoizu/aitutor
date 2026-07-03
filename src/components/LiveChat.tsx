@@ -31,7 +31,12 @@ export default function LiveChat({ turns, isGenerating, onAddToNotes, onRequestH
       {turns.map((turn) => {
         if (turn.role === "user") {
           return (
-            <MessageBubble key={turn.id} role="user" text={turn.text} />
+            <MessageBubble
+              key={turn.id}
+              role="user"
+              text={turn.text}
+              attachments={turn.attachments}
+            />
           );
         }
 

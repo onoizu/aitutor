@@ -20,13 +20,13 @@ export default function AgentStatusBar({ currentMode, className }: AgentStatusBa
   return (
     <div
       className={cn(
-        "agent-flow-scrollbar w-full overflow-x-auto overflow-y-hidden rounded-xl bg-gradient-to-b from-slate-800/90 via-indigo-950/55 to-slate-900/90 p-1.5 pb-2 ring-1 ring-indigo-400/25 shadow-inner shadow-black/20",
+        "agent-flow-scrollbar w-full overflow-x-auto overflow-y-hidden rounded-lg bg-gradient-to-b from-slate-800/85 via-indigo-950/45 to-slate-900/85 p-1 pb-1.5 ring-1 ring-indigo-400/20 shadow-inner shadow-black/15",
         className,
       )}
       role="list"
       aria-label="Guided learning flow: Teach, Quiz, Repair, Review"
     >
-      <div className="flex w-max min-w-full items-stretch gap-1">
+      <div className="flex w-max min-w-full items-stretch gap-0.5">
         {MODES.map((mode, index) => {
           const isActive = mode.id === currentMode;
           return (
@@ -34,7 +34,7 @@ export default function AgentStatusBar({ currentMode, className }: AgentStatusBa
               key={mode.id}
               role="listitem"
               className={cn(
-                "flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg py-2 text-sm font-semibold transition-all duration-200",
+                "flex min-w-0 flex-1 items-center justify-center gap-1 rounded-md px-2 py-1.5 text-xs font-semibold transition-all duration-200",
                 isActive
                   ? "bg-indigo-500/30 text-white shadow-md ring-1 ring-indigo-300/40"
                   : "text-white/70 hover:bg-white/5 hover:text-white",

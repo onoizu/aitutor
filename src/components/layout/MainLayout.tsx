@@ -1,16 +1,17 @@
 "use client";
 
 import type { ReactNode } from "react";
-import type { TutorResponse, QuizSession, RepairResult } from "@/types/tutor";
+import type { TutorResponse, QuizSession, RepairResult, ResourceItem } from "@/types/tutor";
 import type { NotebookEntry } from "@/types/notebook";
 import type { CozeAgentPackage } from "@/types/agentPackage";
+import type { UploadedAttachment } from "@/lib/uploadConstraints";
 import LeftSidebar from "@/components/layout/LeftSidebar";
 import CenterPanel from "@/components/layout/CenterPanel";
-import RightSidebar from "@/components/layout/RightSidebar";
+import RightSidebar, { type ResourceHistoryEntry } from "@/components/layout/RightSidebar";
 import WorkbenchDrawer from "@/components/notebook/WorkbenchDrawer";
 
 export type LiveTurn =
-  | { id: string; role: "user"; text: string }
+  | { id: string; role: "user"; text: string; attachments?: UploadedAttachment[] }
   | {
       id: string;
       role: "tutor";
@@ -35,6 +36,59 @@ export type LearningActionType =
   | "session_review"
   | "mind_map"
   | "study_plan_checkin";
+
+function resourceKey(resource: ResourceItem) {
+  return `${resource.title.trim().toLowerCase()}|${resource.url ?? ""}`;
+}
+
+function uniqueResources(resources: ResourceItem[]): ResourceItem[] {
+  const seen = new Set<string>();
+  return resources.filter((resource) => {
+    const key = resourceKey(resource);
+    if (!resource.title.trim() || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function firstTextLine(text: string) {
+  return text
+    .split(/\n+/)
+    .map((line) => line.replace(/^#+\s*/, "").trim())
+    .find((line) => line && !/^[-*_]{3,}$/.test(line));
+}
+
+function collectResourceHistory(
+  liveTurns: LiveTurn[],
+  response: TutorResponse,
+): ResourceHistoryEntry[] {
+  const entries: ResourceHistoryEntry[] = [];
+  for (const turn of liveTurns) {
+    if (turn.role !== "tutor" || turn.plainMessage) continue;
+    const resources = uniqueResources(turn.response.recommendedResources ?? []);
+    if (resources.length === 0) continue;
+    const title =
+      turn.response.sessionSummary?.coveredTopics[0] ??
+      turn.response.weakTopic?.label ??
+      firstTextLine(turn.text) ??
+      `Recommendation ${entries.length + 1}`;
+    entries.push({
+      id: turn.id,
+      title: title.length > 72 ? `${title.slice(0, 72)}...` : title,
+      resources,
+    });
+  }
+
+  if (entries.length === 0 && response.recommendedResources?.length) {
+    entries.push({
+      id: "current-response-resources",
+      title: response.sessionSummary?.coveredTopics[0] ?? "Current recommendation",
+      resources: uniqueResources(response.recommendedResources),
+    });
+  }
+
+  return entries;
+}
 
 interface MainLayoutProps {
   response: TutorResponse;
@@ -134,6 +188,7 @@ export default function MainLayout({
     currentTopic ??
     response.sessionSummary?.coveredTopics[0] ??
     "AI Tutor";
+  const resourceHistory = collectResourceHistory(liveTurns, response);
 
   return (
     <div className="h-dvh w-full overflow-hidden bg-black text-white">
@@ -176,6 +231,7 @@ export default function MainLayout({
         <RightSidebar
           response={response}
           cozePackage={cozePackage}
+          resourceHistory={resourceHistory}
           notebookEntries={notebookEntries}
           onUpdateNotebookEntry={onUpdateNotebookEntry}
           onRemoveNotebookEntry={onRemoveNotebookEntry}

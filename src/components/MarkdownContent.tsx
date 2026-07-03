@@ -13,13 +13,13 @@ interface MarkdownContentProps {
 
 const components: Components = {
   h1: ({ children }) => (
-    <h1 className="mb-2 mt-4 text-xl font-bold text-white first:mt-0">{children}</h1>
+    <h1 className="mb-1.5 mt-3 text-lg font-bold text-white first:mt-0">{children}</h1>
   ),
   h2: ({ children }) => (
-    <h2 className="mb-2 mt-3 text-lg font-semibold text-white first:mt-0">{children}</h2>
+    <h2 className="mb-1.5 mt-2.5 text-base font-semibold text-white first:mt-0">{children}</h2>
   ),
   h3: ({ children }) => (
-    <h3 className="mb-1.5 mt-3 text-base font-semibold text-white first:mt-0">{children}</h3>
+    <h3 className="mb-1 mt-2.5 text-sm font-semibold text-white first:mt-0">{children}</h3>
   ),
   p: ({ children }) => (
     <p className="mb-2 leading-relaxed last:mb-0">{children}</p>
@@ -81,8 +81,8 @@ export default function MarkdownContent({
   return (
     <div
       className={cn(
-        "prose-invert text-[15px] text-white/90 md:text-base",
-        compact && "text-sm",
+        "prose-invert text-sm text-white/90",
+        compact && "text-[13px]",
         className,
       )}
     >

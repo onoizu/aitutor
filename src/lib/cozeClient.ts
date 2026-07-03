@@ -46,6 +46,13 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function envNumber(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function buildCozeUserPrompt(messages: ChatMessage[]): string {
   return messages
     .map((m) => {
@@ -287,25 +294,34 @@ async function cozeChatCompletionOnce(
   messages: ChatMessage[],
   conversationId: string | undefined,
   imageFile: File | null | undefined,
+  documentFile: File | null | undefined,
   cozeUserId: string,
 ): Promise<CozeChatResult> {
   const { botId } = ensureConfig();
   const userPrompt = buildCozeUserPrompt(messages);
 
-  let fileId: string | undefined;
+  let imageFileId: string | undefined;
   if (imageFile && imageFile.size > 0) {
-    fileId = await uploadCozeFile(imageFile);
+    imageFileId = await uploadCozeFile(imageFile);
   }
 
-  const additional_messages = fileId
+  let documentFileId: string | undefined;
+  if (documentFile && documentFile.size > 0) {
+    documentFileId = await uploadCozeFile(documentFile);
+  }
+
+  const multimodalParts = [
+    { type: "text", text: userPrompt },
+    ...(imageFileId ? [{ type: "image", file_id: imageFileId }] : []),
+    ...(documentFileId ? [{ type: "file", file_id: documentFileId }] : []),
+  ];
+
+  const additional_messages = imageFileId || documentFileId
     ? [
         {
           role: "user",
           type: "question",
-          content: JSON.stringify([
-            { type: "text", text: userPrompt },
-            { type: "image", file_id: fileId },
-          ]),
+          content: JSON.stringify(multimodalParts),
           content_type: "object_string",
         },
       ]
@@ -342,8 +358,11 @@ async function cozeChatCompletionOnce(
     extractStatus(chatRes),
   );
 
-  const MAX_POLLS = process.env.NETLIFY ? 10 : 60;
-  const POLL_INTERVAL = 1500;
+  const MAX_POLLS = process.env.NETLIFY
+    ? envNumber("COZE_MAX_POLLS_NETLIFY", 16)
+    : envNumber("COZE_MAX_POLLS", 60);
+  const FIRST_POLL_DELAY = envNumber("COZE_FIRST_POLL_DELAY_MS", 600);
+  const POLL_INTERVAL = envNumber("COZE_POLL_INTERVAL_MS", 900);
   let pollCount = 0;
   let msgs: JsonRecord[] = [];
   let text = "";
@@ -352,7 +371,7 @@ async function cozeChatCompletionOnce(
   let stableRounds = 0;
 
   while (pollCount < MAX_POLLS) {
-    await sleep(pollCount === 0 ? 2000 : POLL_INTERVAL);
+    await sleep(pollCount === 0 ? FIRST_POLL_DELAY : POLL_INTERVAL);
     pollCount += 1;
 
     let chatCompleted = false;
@@ -447,6 +466,7 @@ export async function cozeChatCompletion(
   messages: ChatMessage[],
   conversationId?: string,
   imageFile?: File | null,
+  documentFile?: File | null,
   endUserKey?: string,
 ): Promise<CozeChatResult> {
   const cozeUserId =
@@ -455,7 +475,7 @@ export async function cozeChatCompletion(
       : `aitutor-anon-${Date.now()}`;
 
   const run = (conv?: string) =>
-    cozeChatCompletionOnce(messages, conv, imageFile ?? null, cozeUserId);
+    cozeChatCompletionOnce(messages, conv, imageFile ?? null, documentFile ?? null, cozeUserId);
 
   try {
     return await run(conversationId);

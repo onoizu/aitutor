@@ -2,11 +2,16 @@ import { NextResponse } from "next/server";
 import type { TutorResponse } from "@/types/tutor";
 import { cozeChatCompletion } from "@/lib/cozeClient";
 import { addMessage, getOrCreateSession } from "@/lib/tutorSession";
-import { extractTextFromFile } from "@/lib/documentParser";
+import { extractTextFromFileDetailed } from "@/lib/documentParser";
 import { chatCompletion, type ChatMessage } from "@/lib/modelClient";
 import { normalizeCozeAgentPackage, EMPTY_COZE_PACKAGE } from "@/lib/normalizeAgentPackage";
 import { cozePackageToTutorResponse } from "@/lib/cozePackageAdapter";
 import { formatCourseContext, ingestCourseDocument, retrieveCourseContext } from "@/lib/ragStore";
+import {
+  formatFileSize,
+  validateUploadFile,
+  type UploadedAttachmentKind,
+} from "@/lib/uploadConstraints";
 import {
   formatLearnerMemoryContext,
   getLearnerMemory,
@@ -27,6 +32,23 @@ interface TutorRequestBody {
   };
 }
 
+function fileFromForm(formData: FormData, key: string): File | null {
+  const value = formData.get(key);
+  return value instanceof File && value.size > 0 ? value : null;
+}
+
+function validateIncomingUpload(file: File, kind: UploadedAttachmentKind) {
+  const error = validateUploadFile(file, kind);
+  if (!error) return null;
+  const status = /smaller/i.test(error) ? 413 : 400;
+  return NextResponse.json({ error }, { status });
+}
+
+function uploadDescriptor(file: File, kind: UploadedAttachmentKind): string {
+  const label = kind === "image" ? "Uploaded image" : "Uploaded document";
+  return `${label}: ${file.name} (${file.type || "unknown type"}, ${formatFileSize(file.size)})`;
+}
+
 function buildCozeCorrectAfterRepairUserMessage(p: {
   question: string;
   wrongAnswer: string;
@@ -40,15 +62,76 @@ function buildCozeCorrectAfterRepairUserMessage(p: {
     `Wrong answer was: ${p.wrongAnswer}\n` +
     `Correct answer: ${p.correctAnswer}\n` +
     `Explanation: ${p.explanation}\n` +
-    `Update mainResponse.summary, noteEntry, sessionSummary, nextRecommendation, weakTopic, resources, mode, learningState as appropriate.`
+    `Return a brief repair follow-up only: mode "repair", weakTopic if useful, nextRecommendation if useful, and a mainResponse.summary under 50 words. ` +
+    `Do not generate resources, sessionSummary, or noteEntry.`
   );
 }
 
 const QUIZ_REQUEST_RE =
   /\b(q?uiz|测验|测试|出题|做题|小测|练习|来道题|考考我|quick\s*check)\b/i;
+const REVIEW_REQUEST_RE =
+  /\b(review|session\s*review|summary|summari[sz]e|总结|回顾|复习|study\s*plan|学习计划)\b/i;
+const REPAIR_REQUEST_RE =
+  /\b(repair|hint|incorrect|wrong|misconception|答错|错了|提示|修正)\b/i;
 
 function isQuizRequest(text: string): boolean {
   return QUIZ_REQUEST_RE.test(text);
+}
+
+function modeOutputInstruction(input: {
+  query: string;
+  correctAfterRepair: boolean;
+}): string {
+  if (input.correctAfterRepair) {
+    return [
+      "[Mode budget: repair follow-up]",
+      "Return one valid JSON object only.",
+      "Keep the response short: mainResponse.summary under 50 words.",
+      "Allowed fields: mode, learningState, weakTopic, mainResponse, nextRecommendation.",
+      "Do not include resources, sessionSummary, noteEntry, mindmap, or a new quiz.",
+    ].join("\n");
+  }
+
+  if (QUIZ_REQUEST_RE.test(input.query)) {
+    return [
+      "[Mode budget: quiz only]",
+      "Return one valid JSON object only.",
+      "Set mode to \"quiz\" and learningState to \"ready_for_quiz\".",
+      "Fill only quiz: question, exactly 4 options, correctAnswer, explanation, hint.",
+      "Keep explanation under 2 sentences and hint under 1 sentence.",
+      "Leave resources empty, sessionSummary empty, noteEntry empty, nextRecommendation empty.",
+      "Do not include a long mainResponse explanation.",
+    ].join("\n");
+  }
+
+  if (REPAIR_REQUEST_RE.test(input.query)) {
+    return [
+      "[Mode budget: repair only]",
+      "Return one valid JSON object only.",
+      "Set mode to \"repair\" and learningState to \"wrong_but_fixable\".",
+      "Give only a concise hint/feedback in mainResponse.summary, under 70 words.",
+      "Fill weakTopic if clear.",
+      "Do not include resources, sessionSummary, noteEntry, or a new quiz.",
+    ].join("\n");
+  }
+
+  if (REVIEW_REQUEST_RE.test(input.query)) {
+    return [
+      "[Mode budget: review]",
+      "Return one valid JSON object only.",
+      "Set mode to \"review\".",
+      "This is the only mode where sessionSummary and resources should be generated.",
+      "Keep sessionSummary concise, return at most 3 resources, and include nextRecommendation.",
+    ].join("\n");
+  }
+
+  return [
+    "[Mode budget: teach]",
+    "Return one valid JSON object only.",
+    "Set mode to \"teach\".",
+    "Keep mainResponse concise and focused on the user's question.",
+    "Do not generate resources, sessionSummary, or noteEntry unless the user explicitly asks for review/resources.",
+  ].join("\n");
 }
 
 function quizTopicFrom(text: string): string {
@@ -134,6 +217,47 @@ function ensureGradableQuizPackage(
   return temporaryQuizPackage(query, "The tutor response did not include a gradable correctAnswer.");
 }
 
+function enforceModeBudget(
+  pkg: ReturnType<typeof normalizeCozeAgentPackage>,
+  query: string,
+  correctAfterRepair: boolean,
+): ReturnType<typeof normalizeCozeAgentPackage> {
+  const emptyHeavyFields = {
+    resources: [],
+    sessionSummary: "",
+    noteEntry: { title: "", content: "" },
+  };
+
+  if (correctAfterRepair || REPAIR_REQUEST_RE.test(query)) {
+    return {
+      ...pkg,
+      ...emptyHeavyFields,
+      quiz: null,
+      mindmap: null,
+      mode: pkg.mode === "repair" ? pkg.mode : "repair",
+    };
+  }
+
+  if (QUIZ_REQUEST_RE.test(query)) {
+    return {
+      ...pkg,
+      ...emptyHeavyFields,
+      nextRecommendation: "",
+      mindmap: null,
+      mode: "quiz",
+    };
+  }
+
+  if (REVIEW_REQUEST_RE.test(query)) {
+    return pkg;
+  }
+
+  return {
+    ...pkg,
+    ...emptyHeavyFields,
+  };
+}
+
 function jsonResult(
   pkg: ReturnType<typeof normalizeCozeAgentPackage>,
   conversationId: string,
@@ -199,6 +323,7 @@ async function callTutorModel(
   messages: ChatMessage[],
   conversationId: string | undefined,
   imageFile: File | null,
+  documentFile: File | null,
   clientSessionId: string | undefined,
 ): Promise<{ text: string; conversationId: string; provider: "coze" | "custom" }> {
   let lastCozeErr: unknown;
@@ -209,6 +334,7 @@ async function callTutorModel(
         messages,
         attempt === 1 ? conversationId : undefined,
         imageFile,
+        documentFile,
         clientSessionId,
       );
       return { ...result, provider: "coze" };
@@ -250,6 +376,7 @@ export async function POST(req: Request) {
   let clientSessionId: string | undefined;
   let correctAfterRepairPayload: TutorRequestBody["correctAfterRepair"] | undefined;
   let imageFile: File | null = null;
+  let documentFileForCoze: File | null = null;
   let userQueryForRetrieval = "";
 
   const contentType = req.headers.get("content-type") ?? "";
@@ -260,15 +387,26 @@ export async function POST(req: Request) {
       (formData.get("conversationId") as string) || undefined;
     clientSessionId =
       (formData.get("sessionId") as string)?.trim() || undefined;
-    imageFile = (formData.get("image") as File | null) ?? null;
+    imageFile = fileFromForm(formData, "image");
+    if (imageFile) {
+      const invalid = validateIncomingUpload(imageFile, "image");
+      if (invalid) return invalid;
+      console.log(
+        "[tutor/route] image upload: name=%s size=%d type=%s",
+        imageFile.name, imageFile.size, imageFile.type,
+      );
+    }
 
-    const documentFile = formData.get("document") as File | null;
-    if (documentFile?.size && documentFile.size > 0) {
+    const documentFile = fileFromForm(formData, "document");
+    if (documentFile) {
+      const invalid = validateIncomingUpload(documentFile, "document");
+      if (invalid) return invalid;
       console.log(
         "[tutor/route] document upload: name=%s size=%d type=%s",
         documentFile.name, documentFile.size, documentFile.type,
       );
-      const docText = await extractTextFromFile(documentFile);
+      const extraction = await extractTextFromFileDetailed(documentFile);
+      const docText = extraction.text;
       const prompt = userMessage || "Answer based on this document";
       userQueryForRetrieval = prompt;
       if (docText) {
@@ -279,15 +417,31 @@ export async function POST(req: Request) {
           fileType: documentFile.type || documentFile.name.split(".").pop(),
           sessionId: clientSessionId,
         });
-        userMessage = `[Document "${documentFile.name}" content below]\n\n${docText}\n\n[User question] ${prompt}`;
+        userMessage =
+          `[${uploadDescriptor(documentFile, "document")}]\n\n` +
+          `[Document content]\n${docText}\n\n` +
+          `[User question] ${prompt}`;
       } else {
+        documentFileForCoze = documentFile;
         console.warn("[tutor/route] document extraction returned empty for:", documentFile.name);
         userMessage =
-          `[The user uploaded a document "${documentFile.name}" (${(documentFile.size / 1024).toFixed(1)} KB) ` +
-          `but its content could not be extracted. ` +
-          `Please acknowledge the upload and explain that the file format may not be supported or the file may be empty.]\n\n` +
+          `[The user uploaded a document "${documentFile.name}" (${formatFileSize(documentFile.size)}) ` +
+          `but local text extraction did not produce usable text. Reason: ${extraction.reason ?? "unknown"}. ` +
+          `The original document is attached to this Coze message as a file object. ` +
+          `Try to answer from the attached file. If the file is a scanned/image-only PDF and cannot be read, ` +
+          `ask the learner to upload page screenshots or OCR text.]\n\n` +
           `[User question] ${prompt}`;
       }
+    }
+
+    if (imageFile) {
+      const prompt = userMessage || userQueryForRetrieval || "Analyze this image";
+      userQueryForRetrieval = userQueryForRetrieval || prompt;
+      userMessage =
+        `[${uploadDescriptor(imageFile, "image")}]\n` +
+        `The actual image is attached to this Coze message as an image object. ` +
+        `Use visual details from the image when answering.\n\n` +
+        prompt;
     }
   } else {
     let body: TutorRequestBody;
@@ -325,6 +479,10 @@ export async function POST(req: Request) {
     sessionId: persistentSessionId,
     query: userQueryForRetrieval || userMessage,
   });
+  const modeInstruction = modeOutputInstruction({
+    query: userQueryForRetrieval || userMessage,
+    correctAfterRepair: Boolean(correctAfterRepairPayload),
+  });
 
   let messages: ChatMessage[];
   if (correctAfterRepairPayload) {
@@ -332,6 +490,7 @@ export async function POST(req: Request) {
       {
         role: "user",
         content:
+          `${modeInstruction}\n\n` +
           (persistentContext ? `${persistentContext}\n\n` : "") +
           buildCozeCorrectAfterRepairUserMessage(correctAfterRepairPayload),
       },
@@ -343,9 +502,11 @@ export async function POST(req: Request) {
     messages = [
       {
         role: "user",
-        content: persistentContext
-          ? `${persistentContext}\n\n[Current user request]\n${text}`
-          : text,
+        content:
+          `${modeInstruction}\n\n` +
+          (persistentContext
+            ? `${persistentContext}\n\n[Current user request]\n${text}`
+            : `[Current user request]\n${text}`),
       },
     ];
   }
@@ -374,6 +535,7 @@ export async function POST(req: Request) {
               messages,
               incomingConversationId,
               hasImage ? imageFile : null,
+              documentFileForCoze,
               clientSessionId,
             );
             rawText = result.text;
@@ -383,7 +545,11 @@ export async function POST(req: Request) {
             clearInterval(heartbeat);
             if (isQuizRequest(userQueryForRetrieval || userMessage)) {
               const runtimeId = incomingConversationId || getOrCreateSession().conversationId;
-              const pkg = temporaryQuizPackage(userQueryForRetrieval || userMessage, err);
+              const pkg = enforceModeBudget(
+                temporaryQuizPackage(userQueryForRetrieval || userMessage, err),
+                userQueryForRetrieval || userMessage,
+                Boolean(correctAfterRepairPayload),
+              );
               const payload = jsonResult(pkg, runtimeId);
               send({ t: "done", response: payload });
               streamClosed = true;
@@ -409,9 +575,13 @@ export async function POST(req: Request) {
           addMessage(runtimeId, "assistant", rawText.slice(0, 400));
 
           console.log("[tutor] coze raw (first 1200):", rawText.slice(0, 1200));
-          const pkg = ensureGradableQuizPackage(
-            normalizeCozeAgentPackage(rawText),
+          const pkg = enforceModeBudget(
+            ensureGradableQuizPackage(
+              normalizeCozeAgentPackage(rawText),
+              userQueryForRetrieval || userMessage,
+            ),
             userQueryForRetrieval || userMessage,
+            Boolean(correctAfterRepairPayload),
           );
           const mr = pkg.mainResponse;
           console.log(
@@ -455,6 +625,7 @@ export async function POST(req: Request) {
       messages,
       incomingConversationId,
       hasImage ? imageFile : null,
+      documentFileForCoze,
       clientSessionId,
     );
     const rawText = cozeResult.text;
@@ -472,9 +643,13 @@ export async function POST(req: Request) {
     addMessage(runtimeId, "assistant", rawText.slice(0, 400));
 
     console.log("[tutor] coze raw (first 1200):", rawText.slice(0, 1200));
-    const pkg = ensureGradableQuizPackage(
-      normalizeCozeAgentPackage(rawText),
+    const pkg = enforceModeBudget(
+      ensureGradableQuizPackage(
+        normalizeCozeAgentPackage(rawText),
+        userQueryForRetrieval || userMessage,
+      ),
       userQueryForRetrieval || userMessage,
+      Boolean(correctAfterRepairPayload),
     );
     const mr2 = pkg.mainResponse;
     console.log(
@@ -498,14 +673,18 @@ export async function POST(req: Request) {
   } catch (err) {
     console.error("Tutor model request failed", err);
     const fid = incomingConversationId || getOrCreateSession().conversationId;
-    const fallbackPkg = isQuizRequest(userQueryForRetrieval || userMessage)
-      ? temporaryQuizPackage(userQueryForRetrieval || userMessage, err)
-      : {
-          ...EMPTY_COZE_PACKAGE,
-          mainResponse: {
-            summary: `Coze request failed: ${err instanceof Error ? err.message : String(err)}`,
+    const fallbackPkg = enforceModeBudget(
+      isQuizRequest(userQueryForRetrieval || userMessage)
+        ? temporaryQuizPackage(userQueryForRetrieval || userMessage, err)
+        : {
+            ...EMPTY_COZE_PACKAGE,
+            mainResponse: {
+              summary: `Coze request failed: ${err instanceof Error ? err.message : String(err)}`,
+            },
           },
-        };
+      userQueryForRetrieval || userMessage,
+      Boolean(correctAfterRepairPayload),
+    );
     return NextResponse.json(jsonResult(fallbackPkg, fid));
   }
 }
